@@ -1,0 +1,313 @@
+      {itemFilterModalOpen && config ? (
+        <div className="modal-back modal-filter-back" onMouseDown={() => dismissItemFilterModal()}>
+          <div className="modal modal-item-filter modal-filter-sheet" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-filter-sheet-inner">
+              <h2>筛选 — 道具</h2>
+              <div className="filter-quick-search-row">
+                <input
+                  ref={itemFilterQuickInputRef}
+                  type="search"
+                  className="filter-quick-search"
+                  placeholder="Ctrl+F 快速筛选类型备注（Enter 应用）"
+                  value={itemFilterQuickQuery}
+                  onChange={(e) => setItemFilterQuickQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void applyItemFilterQuickSearch();
+                    }
+                  }}
+                />
+              </div>
+              <p className="help modal-filter-help">
+                选项随当前表格数据更新。三列条件之间为「且」；类型备注为单选（仅一项），物品品质同列多选为「或」。选项行左侧 ⋮⋮ 可拖拽调整选项顺序；区块行左侧 ⋮⋮ 可拖拽调整类型备注 / 物品品质 / 防护值顺序，保存后写入配置。防护值：「无」指单元格为空；「范围内」指可解析为数字且在区间内（可只填最小或最大）。**Ctrl+F** 在快捷框输入后按 Enter，等同只勾选一项类型备注并保存。
+              </p>
+              <FilterSectionDnDList<ItemFilterSectionId>
+                order={itemFilterSectionOrder}
+                onReorder={(next) => setItemFilterDraft((d) => ({ ...d, sectionOrder: next }))}
+                rowClassForId={(id) => (id === "defense" ? " filter-section-dnd-row--static" : " filter-section-dnd-row--grow")}
+                renderSection={(id) => {
+                  if (id === "typeRemark") {
+                    return (
+                      <div className={`item-filter-section item-filter-section--grow${itemFilterColIdx.tr < 0 ? " item-filter-section--disabled" : ""}`}>
+                        <div className="item-filter-h3-row">
+                          <h3 className="item-filter-h3">类型备注</h3>
+                          {itemFilterColIdx.tr >= 0 ? (
+                            <button
+                              type="button"
+                              className="btn btn-tiny"
+                              onClick={() => setItemFilterDraft((d) => ({ ...d, typeRemarkKeyOrder: null }))}
+                            >
+                              恢复默认排序
+                            </button>
+                          ) : null}
+                        </div>
+                        {itemFilterColIdx.tr < 0 ? (
+                          <p className="help muted">当前表无「类型备注」列，该条件不可用。</p>
+                        ) : (
+                          <>
+                            <div className="filter-selection-summary" role="status">
+                              <span className="filter-selection-summary-label">当前选择</span>
+                              {itemFilterDraft.typeRemarkKeys[0] ? (
+                                <span className="filter-selection-summary-value">
+                                  {typeRemarkLabelPrefix(itemFilterDraft.typeRemarkKeys[0])}
+                                  <span>{itemFilterDraft.typeRemarkKeys[0]}</span>
+                                </span>
+                              ) : (
+                                <span className="filter-selection-summary-empty">（未选择）</span>
+                              )}
+                            </div>
+                            <div ref={itemFilterTypeRemarkScrollRef} className="item-filter-scroll item-filter-scroll--flex">
+                              <FilterDnDOptionList
+                                items={itemTypeRemarkDisplayKeys}
+                                selectedKeys={itemFilterDraft.typeRemarkKeys}
+                                labelPrefix={typeRemarkLabelPrefix}
+                                onToggle={(opt) =>
+                                  setItemFilterDraft((d) => ({
+                                    ...d,
+                                    typeRemarkKeys: d.typeRemarkKeys[0] === opt ? [] : [opt],
+                                  }))
+                                }
+                                onReorderKeys={(orderedKeys) => setItemFilterDraft((d) => ({ ...d, typeRemarkKeyOrder: orderedKeys }))}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  }
+                  if (id === "quality") {
+                    return (
+                      <div className={`item-filter-section item-filter-section--grow${itemFilterColIdx.qual < 0 ? " item-filter-section--disabled" : ""}`}>
+                        <div className="item-filter-h3-row">
+                          <h3 className="item-filter-h3">物品品质</h3>
+                          {itemFilterColIdx.qual >= 0 ? (
+                            <button
+                              type="button"
+                              className="btn btn-tiny"
+                              onClick={() => setItemFilterDraft((d) => ({ ...d, qualityKeyOrder: null }))}
+                            >
+                              恢复默认排序
+                            </button>
+                          ) : null}
+                        </div>
+                        {itemFilterColIdx.qual < 0 ? (
+                          <p className="help muted">当前表无「物品品质」列，该条件不可用。</p>
+                        ) : (
+                          <div className="item-filter-scroll item-filter-scroll--flex">
+                            <FilterDnDOptionList
+                              items={itemQualityDisplayKeys}
+                              selectedKeys={itemFilterDraft.qualityKeys}
+                              onToggle={(opt) =>
+                                setItemFilterDraft((d) => {
+                                  const s = new Set(d.qualityKeys);
+                                  if (s.has(opt)) s.delete(opt);
+                                  else s.add(opt);
+                                  return { ...d, qualityKeys: [...s] };
+                                })
+                              }
+                              onReorderKeys={(orderedKeys) => setItemFilterDraft((d) => ({ ...d, qualityKeyOrder: orderedKeys }))}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="item-filter-section item-filter-section--static">
+                      <h3 className="item-filter-h3">防护值</h3>
+                      {itemFilterColIdx.def < 0 ? (
+                        <p className="help muted">当前表无「防护值」列，该条件不可用。</p>
+                      ) : (
+                        <>
+                          <label className="item-filter-row item-filter-row--large">
+                            <input
+                              type="checkbox"
+                              checked={itemFilterDraft.defenseNone}
+                              onChange={(e) => setItemFilterDraft((d) => ({ ...d, defenseNone: e.target.checked }))}
+                            />
+                            <span>无防护值（单元格为空）</span>
+                          </label>
+                          <label className="item-filter-row item-filter-row--large">
+                            <input
+                              type="checkbox"
+                              checked={itemFilterDraft.defenseRange}
+                              onChange={(e) => setItemFilterDraft((d) => ({ ...d, defenseRange: e.target.checked }))}
+                            />
+                            <span>范围内（含边界）</span>
+                          </label>
+                          <div className="item-filter-range-row">
+                            <label>
+                              最小
+                              <input
+                                type="number"
+                                className="bookmark item-filter-num"
+                                disabled={!itemFilterDraft.defenseRange}
+                                value={itemFilterDraft.defenseMin ?? ""}
+                                onChange={(e) => {
+                                  const t = e.target.value.trim();
+                                  setItemFilterDraft((d) =>
+                                    t === ""
+                                      ? { ...d, defenseMin: null }
+                                      : { ...d, defenseMin: Number.isFinite(Number(t)) ? Number(t) : d.defenseMin },
+                                  );
+                                }}
+                              />
+                            </label>
+                            <label>
+                              最大
+                              <input
+                                type="number"
+                                className="bookmark item-filter-num"
+                                disabled={!itemFilterDraft.defenseRange}
+                                value={itemFilterDraft.defenseMax ?? ""}
+                                onChange={(e) => {
+                                  const t = e.target.value.trim();
+                                  setItemFilterDraft((d) =>
+                                    t === ""
+                                      ? { ...d, defenseMax: null }
+                                      : { ...d, defenseMax: Number.isFinite(Number(t)) ? Number(t) : d.defenseMax },
+                                  );
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                }}
+              />
+              <div className="btn-row modal-filter-footer">
+                <button type="button" className="btn" onClick={() => setItemFilterDraft((d) => clearItemFilterSelectionsKeepOrder(d))}>
+                  清空
+                </button>
+                <button type="button" className="btn" onClick={() => dismissItemFilterModal()}>
+                  取消
+                </button>
+                <button type="button" className="btn primary" onClick={() => void commitItemFilterSave()}>
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {taskFilterModalOpen && config ? (
+        <div className="modal-back modal-filter-back" onMouseDown={() => dismissTaskFilterModal()}>
+          <div className="modal modal-item-filter modal-filter-sheet" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-filter-sheet-inner">
+              <h2>筛选 — 任务</h2>
+              <div className="filter-quick-search-row">
+                <input
+                  ref={taskFilterQuickInputRef}
+                  type="search"
+                  className="filter-quick-search"
+                  placeholder="Ctrl+F 快速筛选任务类型（Enter 应用）"
+                  value={taskFilterQuickQuery}
+                  onChange={(e) => setTaskFilterQuickQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void applyTaskFilterQuickSearch();
+                    }
+                  }}
+                />
+              </div>
+              <p className="help modal-filter-help">
+                选项随当前表格数据更新。两列条件为「且」；同列多选为「或」。选项行左侧 ⋮⋮ 可拖拽调整选项顺序；区块行左侧 ⋮⋮ 可拖拽调整任务类型 / 任务链顺序，保存后写入配置。**Ctrl+F** 在快捷框输入后按 Enter，等同只勾选一项任务类型并保存。
+              </p>
+              <FilterSectionDnDList<TaskFilterSectionId>
+                order={taskFilterSectionOrder}
+                onReorder={(next) => setTaskFilterDraft((d) => ({ ...d, sectionOrder: next }))}
+                rowClassForId={() => " filter-section-dnd-row--grow"}
+                renderSection={(id) => {
+                  if (id === "taskType") {
+                    return (
+                      <div className={`item-filter-section item-filter-section--grow${taskFilterColIdx.tt < 0 ? " item-filter-section--disabled" : ""}`}>
+                        <div className="item-filter-h3-row">
+                          <h3 className="item-filter-h3">任务类型（TaskType）</h3>
+                          {taskFilterColIdx.tt >= 0 ? (
+                            <button
+                              type="button"
+                              className="btn btn-tiny"
+                              onClick={() => setTaskFilterDraft((d) => ({ ...d, taskTypeKeyOrder: null }))}
+                            >
+                              恢复默认排序
+                            </button>
+                          ) : null}
+                        </div>
+                        {taskFilterColIdx.tt < 0 ? (
+                          <p className="help muted">当前表无「TaskType」或「任务类型」列，该条件不可用。</p>
+                        ) : (
+                          <div className="item-filter-scroll item-filter-scroll--flex">
+                            <FilterDnDOptionList
+                              items={taskTypeDisplayKeys}
+                              selectedKeys={taskFilterDraft.taskTypeKeys}
+                              onToggle={(opt) =>
+                                setTaskFilterDraft((d) => {
+                                  const s = new Set(d.taskTypeKeys);
+                                  if (s.has(opt)) s.delete(opt);
+                                  else s.add(opt);
+                                  return { ...d, taskTypeKeys: [...s] };
+                                })
+                              }
+                              onReorderKeys={(orderedKeys) => setTaskFilterDraft((d) => ({ ...d, taskTypeKeyOrder: orderedKeys }))}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className={`item-filter-section item-filter-section--grow${taskFilterColIdx.ch < 0 ? " item-filter-section--disabled" : ""}`}>
+                      <div className="item-filter-h3-row">
+                        <h3 className="item-filter-h3">任务链</h3>
+                        {taskFilterColIdx.ch >= 0 ? (
+                          <button
+                            type="button"
+                            className="btn btn-tiny"
+                            onClick={() => setTaskFilterDraft((d) => ({ ...d, chainKeyOrder: null }))}
+                          >
+                            恢复默认排序
+                          </button>
+                        ) : null}
+                      </div>
+                      {taskFilterColIdx.ch < 0 ? (
+                        <p className="help muted">当前表无「任务链」列，该条件不可用。</p>
+                      ) : (
+                        <div className="item-filter-scroll item-filter-scroll--flex">
+                          <FilterDnDOptionList
+                            items={taskChainDisplayKeys}
+                            selectedKeys={taskFilterDraft.chainKeys}
+                            onToggle={(opt) =>
+                              setTaskFilterDraft((d) => {
+                                const s = new Set(d.chainKeys);
+                                if (s.has(opt)) s.delete(opt);
+                                else s.add(opt);
+                                return { ...d, chainKeys: [...s] };
+                              })
+                            }
+                            onReorderKeys={(orderedKeys) => setTaskFilterDraft((d) => ({ ...d, chainKeyOrder: orderedKeys }))}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                }}
+              />
+              <div className="btn-row modal-filter-footer">
+                <button type="button" className="btn" onClick={() => setTaskFilterDraft((d) => clearTaskFilterSelectionsKeepOrder(d))}>
+                  清空
+                </button>
+                <button type="button" className="btn" onClick={() => dismissTaskFilterModal()}>
+                  取消
+                </button>
+                <button type="button" className="btn primary" onClick={() => void commitTaskFilterSave()}>
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}

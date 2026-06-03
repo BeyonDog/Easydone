@@ -1,0 +1,11 @@
+import fs from "fs";
+const appPath = new URL("../src/App.tsx", import.meta.url);
+const fragPath = new URL("./filter-modals-fragment.txt", import.meta.url);
+let app = fs.readFileSync(appPath, "utf8");
+const frag = fs.readFileSync(fragPath, "utf8");
+const start = app.indexOf("      {itemFilterModalOpen && config ? (");
+const end = app.indexOf("      <GoGmtModalView />");
+if (start < 0 || end < 0) throw new Error("markers not found");
+app = app.slice(0, start) + frag.trimEnd() + "\n      " + app.slice(end);
+fs.writeFileSync(appPath, app, "utf8");
+console.log("spliced modals");

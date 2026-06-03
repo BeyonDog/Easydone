@@ -1,0 +1,13 @@
+{
+  "outputDir": "D:\\AIWorkspace\\easydone\\Update",
+  "publicBaseUrl": "http://10.21.125.168:8080",
+  "manifestFileName": "latest.json",
+  "installerFileName": "easydone-setup.exe",
+  "requireInstallerSignature": true,
+  "github": {
+    "remote": "git@github.com:BeyonDog/Easydone.git",
+    "remoteName": "origin",
+    "branches": ["main", "second", "third"],
+    "artifactsDir": "ReleaseArtifacts"
+  }
+}

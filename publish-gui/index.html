@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>easydone 内网发版</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header>
+        <h1>easydone 内网发版</h1>
+        <p class="sub" id="status-line">加载中…</p>
+      </header>
+
+      <section class="card">
+        <h2>版本信息</h2>
+        <dl class="meta">
+          <div>
+            <dt>当前版本</dt>
+            <dd id="current-version">—</dd>
+          </div>
+          <div>
+            <dt>发布版本</dt>
+            <dd><input id="publish-version" type="text" /></dd>
+          </div>
+        </dl>
+        <p class="hint build-only-hint" id="build-only-hint" hidden>
+          「仅构建」不会修改版本号，也不会复制到内网 Update 目录，仅供本机安装测试。
+        </p>
+        <label class="field">
+          <span>更新说明</span>
+          <textarea id="publish-notes" rows="6" placeholder="填写本次更新内容…"></textarea>
+        </label>
+        <p class="hint" id="config-hint"></p>
+      </section>
+
+      <section class="card">
+        <h2>构建与发布</h2>
+        <p class="hint">
+          三按钮相互独立：<strong>仅构建</strong>只编译 NSIS 安装包；<strong>仅发布</strong>用已有产物写入内网目录；<strong>构建并发布</strong>为完整发版流程。若签名私钥有密码，请在 <code>publish.config.json</code> 配置 <code>signingKeyPassword</code>。
+        </p>
+        <div class="btn-row actions">
+          <button type="button" id="btn-build" class="btn-secondary">仅构建</button>
+          <button type="button" id="btn-publish-only" class="btn-secondary">仅发布</button>
+          <button type="button" id="btn-build-publish" class="primary">构建并发布</button>
+        </div>
+        <div class="job-toolbar">
+          <div id="job-status" class="job-status" hidden></div>
+          <button type="button" id="btn-reset-job" class="btn-secondary btn-tiny">重置任务状态</button>
+        </div>
+        <div id="log" class="log-view" hidden></div>
+      </section>
+
+      <section class="card">
+        <h2>代码存档（GitHub）</h2>
+        <p class="hint">
+          将当前源码与<strong>最新 NSIS 安装包</strong>提交并推送到对应分支（<code>--force-with-lease</code>，会覆盖远程该分支历史）。请先完成「仅构建」或「构建并发布」。需本机已安装 Git 并可访问
+          <a href="https://github.com/BeyonDog/Easydone" target="_blank" rel="noopener">BeyonDog/Easydone</a>。
+        </p>
+        <p class="hint repo-git-hint" id="repo-git-hint"></p>
+        <div class="save-slots" id="save-slots"></div>
+        <div class="job-toolbar">
+          <div id="repo-job-status" class="job-status" hidden></div>
+          <button type="button" id="btn-reset-repo-job" class="btn-secondary btn-tiny">重置存档任务</button>
+        </div>
+        <div id="repo-log" class="log-view" hidden></div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

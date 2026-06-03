@@ -1,0 +1,1074 @@
+{
+  "replacements": [
+    {
+      "old": "/** ??Excel ????????????? */",
+      "new": "/** 不可隐藏的 Excel 表头（列隐藏面板中禁用） */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const NON_HIDEABLE_ITEM_HEADERS = new Set([\"??ID\"]);",
+      "new": "const NON_HIDEABLE_ITEM_HEADERS = new Set([\"物品ID\"]);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const NON_HIDEABLE_TASK_HEADERS = new Set([\"??ID\"]);",
+      "new": "const NON_HIDEABLE_TASK_HEADERS = new Set([\"任务ID\"]);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const TYPE_REMARK_PRIORITY = [\"??\", \"??\", \"??\", \"??\", \"??\"];",
+      "new": "const TYPE_REMARK_PRIORITY = [\"武器\", \"防具\", \"食材\", \"材料\", \"藏品\"];",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const QUALITY_LABEL_ORDER = [\"???\", \"?\", \"?\", \"?\", \"?\", \"?\"];",
+      "new": "const QUALITY_LABEL_ORDER = [\"低品质\", \"绿\", \"蓝\", \"紫\", \"金\", \"红\"];",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "/** ??????S + ???? O????O ???? S ????????????S ???? */",
+      "new": "/** 数据键集合 S + 保存顺序 O：先按 O 保留仍在 S 的键，再按默认规则追加 S 中剩余键 */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "/** ??????????????????config????????*/",
+      "new": "/** 从磁盘 JSON 规范化 AppConfig（筛选、快照等） */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "/** ??????????????????source ????*/",
+      "new": "/** 当前表格勾选行所属业务类型（与快照 source 对齐） */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "/** ?????? localeCompare ???????a ?????? */",
+      "new": "/** 表头排序：与 localeCompare 一致，升序为 a 在前时返回负 */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "/** ????????????????????????aoa????????*/",
+      "new": "/** 从 currentAoa 与 selectedRows 构建选中行子表（含表头） */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "  /** ??????????=???????????????????????? */",
+      "new": "  /** 道具表每行数量（dataIdx → qty），默认 1 */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "  /** ???? Excel ????fetch=??/?????????refresh=??????????????*/",
+      "new": "  /** 主表拉取 Excel 时空态：fetch=首次；refresh=工具栏刷新后 */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "  /** ?????????????GMT ?????????? GMT??????openUrl */",
+      "new": "  /** GMT 登录态：检查中 / 已登录 / 未登录；登录用 openUrl */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "  /** ???? / ???????????? GMT??????????????*/",
+      "new": "  /** 道具 / 任务表顶栏 GMT 发送前置校验提示 */",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "    // eslint-disable-next-line react-hooks/exhaustive-deps -- ??Cookie/????????????",
+      "new": "    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 Cookie/登录态变化时探测",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "    // eslint-disable-next-line react-hooks/exhaustive-deps -- ???????????? Excel",
+      "new": "    // eslint-disable-next-line react-hooks/exhaustive-deps -- 向导关闭后加载 Excel",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "title=\"????????\"",
+      "new": "title=\"拖拽调整区块顺序\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              title=\"????\"",
+      "new": "              title=\"拖拽调整顺序\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ??\n            </span>\n            <div className=\"filter-section-dnd-slot\">",
+      "new": "              ⋮⋮\n            </span>\n            <div className=\"filter-section-dnd-slot\">",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`?? Excel ??: ${msg}`);",
+      "new": "push(`读 Excel 失败: ${msg}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`GMT ??????: ${e}`);",
+      "new": "push(`GMT 登录检查失败: ${e}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"GMT ????\");",
+      "new": "push(\"GMT 已登录\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`GMT ????: ${e}`);",
+      "new": "push(`GMT 登录失败: ${e}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"GMT ???\");",
+      "new": "push(\"GMT 已退出\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`?? GMT ??????: ${e}`);",
+      "new": "push(`打开 GMT 登录窗失败: ${e}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"????????????????\");",
+      "new": "push(\"请填写防护值范围的最小值或最大值\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`??????: ${e}`));",
+      "new": "void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "void saveTaskTableFilterToDisk(nextFilter).catch((e) => push(`??????: ${e}`));",
+      "new": "void saveTaskTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"???????????\");",
+      "new": "push(\"当前表无「类型备注」列\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "if (ambiguous) push(`?????????${key}?`);",
+      "new": "if (ambiguous) push(`多个匹配，已选用「${key}」`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"?????TaskType?????????\");",
+      "new": "push(\"当前表无「TaskType」或「任务类型」列\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(headerName ? \"??????\" : \"?????\");",
+      "new": "push(headerName ? \"已冻结到此列\" : \"已取消冻结\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"?????\");",
+      "new": "push(\"请先勾选行\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"???????????????\");",
+      "new": "push(\"记录类型不匹配，无法追加\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"??????????????\");",
+      "new": "push(\"请先配置「物品备注」列\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`?????${snap.title}?`);",
+      "new": "push(`已追加快照「${snap.title}」`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`???????${label}? ? ${rowCount} ??`);",
+      "new": "push(`已保存到左侧（${label}表 · ${rowCount} 行）`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"??????\");",
+      "new": "push(\"名称不能为空\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"????\");",
+      "new": "push(\"已重命名\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"?????ID??\");",
+      "new": "push(\"所选行物品 ID 为空\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`????${rewardItems.length} ??????${idxs.length} ??`);",
+      "new": "push(`已发送 ${rewardItems.length} 种物品（共 ${idxs.length} 行）`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`GMT ????: ${result.message}`);",
+      "new": "push(`GMT 发送失败: ${result.message}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`??????${taskId}`);",
+      "new": "push(`已完成任务 ${taskId}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(\"???????\");",
+      "new": "push(\"无法生成指令\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "push(`???????: ${e}`);",
+      "new": "push(`复制失败: ${e}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(\"??? Excel ????\");",
+      "new": "setErr(\"请配置 Excel 工作区\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(`Excel ???????\\n${ip}\\n${mp}`);",
+      "new": "setErr(`Excel 文件未找到\\n${ip}\\n${mp}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(\"????????\");",
+      "new": "setErr(\"壁纸文件过大\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(\"???????????????\");",
+      "new": "setErr(\"壁纸格式不支持或读取失败\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(\"Excel ????????\");",
+      "new": "setErr(\"Excel 工作区无效\");",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "setErr(`Excel ??????\\n${ip}\\n${mp}`);",
+      "new": "setErr(`Excel 文件未找到\\n${ip}\\n${mp}`);",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const defaultTitle = `?? ${new Date(now).toLocaleString(\"zh-CN\", { hour12: false })}?${built.idxs.length}??`;",
+      "new": "const defaultTitle = `快照 ${new Date(now).toLocaleString(\"zh-CN\", { hour12: false })}（${built.idxs.length}行）`;",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const label = source === \"item\" ? \"??\" : \"??\";",
+      "new": "const label = source === \"item\" ? \"道具\" : \"任务\";",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "const srcLabel = s.source === \"item\" ? \"??\" : \"??\";",
+      "new": "const srcLabel = s.source === \"item\" ? \"道具\" : \"任务\";",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "{ex || \"???\"}",
+      "new": "{ex || \"未选择\"}",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "pickFolder(\"?? Excel ????\")",
+      "new": "pickFolder(\"选择 Excel 工作区\")",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "pickFolder(\"Excel ????\")",
+      "new": "pickFolder(\"Excel 工作区\")",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<h2>????</h2>\n          <p className=\"help\">?? Excel",
+      "new": "<h2>设置向导</h2>\n          <p className=\"help\">选择 Excel",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label>Excel ????</label>",
+      "new": "<label>Excel 工作区</label>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "title: \"??????\"",
+      "new": "title: \"选择壁纸\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label htmlFor=\"settings-theme-accent\">?????</label>",
+      "new": "<label htmlFor=\"settings-theme-accent\">主题强调色</label>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label htmlFor=\"settings-theme-bg\">?????</label>",
+      "new": "<label htmlFor=\"settings-theme-bg\">背景底色</label>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label>??????</label>",
+      "new": "<label>桌面壁纸</label>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<h2>???? ? {hiddenPanel === \"item\" ? \"???\" : \"???\"}</h2>",
+      "new": "<h2>隐藏列 · {hiddenPanel === \"item\" ? \"道具\" : \"任务\"}</h2>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<span className=\"muted\">????</span>",
+      "new": "<span className=\"muted\">不可隐藏</span>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label>????</label>\n            <textarea",
+      "new": "<label>指令预览</label>\n            <textarea",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ???\n            </button>\n          </div>\n        </div>\n      </motion.div>\n    );\n  };",
+      "new": "              知道了\n            </button>\n          </div>\n        </div>\n      </div>\n    );\n  };",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ???\n            </button>\n          </div>\n        </div>\n      </div>\n    );\n  };",
+      "new": "              知道了\n            </button>\n          </div>\n        </motion.div>\n      </div>\n    );\n  };",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "            <h2>设置向导</h2>\n            <p className=\"help\">\n              ???????",
+      "new": "<h2>删除快照</h2>\n            <p className=\"help\">\n              确定删除快照「",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ???????<span title={pendingDeleteSnapshot.title}>{pendingDeleteSnapshot.title}</span>??????????",
+      "new": "              确定删除快照「<span title={pendingDeleteSnapshot.title}>{pendingDeleteSnapshot.title}</span>」？此操作不可恢复。",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ???????? {snapshotNameModal.source === \"item\" ? \"??\" : \"??\"} ??? {snapshotNameModal.rowCount}{\" \"}\n              ??????????????????????",
+      "new": "              将保存当前勾选的 {snapshotNameModal.source === \"item\" ? \"道具\" : \"任务\"} 行（共 {snapshotNameModal.rowCount}{\" \"}\n              行）到左侧快照列表。可修改标题后点「保存」。",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<label htmlFor=\"snapshot-title-input\">??</label>",
+      "new": "<label htmlFor=\"snapshot-title-input\">标题</label>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "title=\"??????????\"",
+      "new": "title=\"已保存的类型备注筛选\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<span className=\"topbar-filter-summary-label\">????</span>",
+      "new": "<span className=\"topbar-filter-summary-label\">类型备注</span>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "{gmtSessionChecking ? \"GMT?\" : gmtLoggedIn ? \"GMT ???\" : \"GMT ???\"}",
+      "new": "{gmtSessionChecking ? \"GMT…\" : gmtLoggedIn ? \"GMT 已登录\" : \"GMT 未登录\"}",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "{gmtLoggedIn ? \"????\" : \"??\"}",
+      "new": "{gmtLoggedIn ? \"重新登录\" : \"登录\"}",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<option value=\"\">??</option>",
+      "new": "<option value=\"\">区服</option>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "placeholder=\"?? ID\"",
+      "new": "placeholder=\"账号 ID\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<motion.div className=\"card-title\">全部道具</motion.div>",
+      "new": "<div className=\"card-title\">全部道具</div>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<div className=\"card-title\">??????</motion.div>",
+      "new": "<div className=\"card-title\">全部道具</div>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<div className=\"card-title\">??????</div>",
+      "new": "<div className=\"card-title\">全部道具</motion.div>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<div className=\"card-sub\">Item.xlsx ??Item</div>",
+      "new": "<div className=\"card-sub\">Item.xlsx · Item</div>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "<div className=\"card-title\">??????</div>\n            <div className=\"card-sub\">Mission.xlsx",
+      "new": "<div className=\"card-title\">全部任务</div>\n            <div className=\"card-sub\">Mission.xlsx",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "Mission.xlsx ??Task</div>",
+      "new": "Mission.xlsx · Task</div>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                  ???{srcLabel} ? {rowCount} ??? {timeStr}",
+      "new": "                  快照 · {srcLabel} · {rowCount} 行 · {timeStr}",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "? \"????????\"",
+      "new": "? \"请先完成设置向导\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "? \"???\"",
+      "new": "? \"无数据\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "? \"??????\"",
+      "new": "? \"暂无表格数据\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": ": \"????????\"",
+      "new": ": \"获取本地数据中…\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                  ???<strong>{itemQtyTotal}</strong>",
+      "new": "                  合计：<strong>{itemQtyTotal}</strong>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "title=\"?????\"",
+      "new": "title=\"升序\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "title=\"???????\"",
+      "new": "title=\"取消排序\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "aria-label=\"??\"",
+      "new": "aria-label=\"全选\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "onClick={() => openSnapshotNameModal()}>\n            ????????          </button>",
+      "new": "onClick={() => openSnapshotNameModal()}>\n            保存选中到左侧\n          </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ????{label}??              </button>",
+      "new": "                添加到「{label}」\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "if (src === \"item\") return \"????\";",
+      "new": "if (src === \"item\") return \"去 GMT 发道具\";",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "if (src === \"task\") return \"????\";",
+      "new": "if (src === \"task\") return \"去 GMT 完成任务\";",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "return \"??GMT ??\";",
+      "new": "return \"去 GMT 执行\";",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "            ????          </button>",
+      "new": "            重命名\n          </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "            ??\n          </button>",
+      "new": "            删除\n          </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "            ????\n          </button>",
+      "new": "            冻结此列\n          </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "            ????\n          </button>\n        </div>\n      ) : null}\n\n      <div className=\"toasts\">",
+      "new": "            取消冻结\n          </button>\n        </div>\n      ) : null}\n\n      <div className=\"toasts\">",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ??\n              </button>",
+      "new": "                取消\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ??\n              </button>\n              <button type=\"button\" className=\"btn primary\"",
+      "new": "                保存\n              </button>\n              <button type=\"button\" className=\"btn primary\"",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ?????\n              </button>",
+      "new": "                选择文件夹\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ??????\n              </button>",
+      "new": "                恢复默认\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ????????              </button>",
+      "new": "                选择图片\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "                ????\n              </button>",
+      "new": "                清除\n              </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ??????\n            </button>",
+      "new": "              打开登录\n            </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ????\n            </button>",
+      "new": "              取消\n            </button>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ????\n            </button>\n          </div>\n        </div>\n      </header>",
+      "new": "              刷新\n            </button>\n          </div>\n        </div>\n      </header>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ????\n            </button>\n            onClick={() => openTableFilterModal()}",
+      "new": "              筛选\n            </button>\n            onClick={() => openTableFilterModal()}",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "              ??\n          </button>\n        </div>\n      </header>",
+      "new": "              设置\n          </button>\n        </div>\n      </header>",
+      "note": "fix-zh-v2"
+    },
+    {
+      "old": "    if (!built) {\n      push(\"?????\");\n      return;\n    }\n    const source = getCurrentTableSource(activeView, config) ?? \"item\";",
+      "new": "    if (!built) {\n      push(\"请先勾选行\");\n      return;\n    }\n    const source = getCurrentTableSource(activeView, config) ?? \"item\";",
+      "note": "push-请先勾选行-openSnapshot"
+    },
+    {
+      "old": "    if (!built) {\n      push(\"?????\");\n      return;\n    }\n    const currentSource = getCurrentTableSource(activeView, config) ?? \"item\";",
+      "new": "    if (!built) {\n      push(\"请先勾选行\");\n      return;\n    }\n    const currentSource = getCurrentTableSource(activeView, config) ?? \"item\";",
+      "note": "push-请先勾选行-append"
+    },
+    {
+      "old": "      if (currentSource === \"task\" && snap.source === \"item\") {\n        push(\"????????????\");\n      } else {\n        push(\"????????????\");\n      }",
+      "new": "      if (currentSource === \"task\" && snap.source === \"item\") {\n        push(\"记录类型不匹配，无法追加\");\n      } else {\n        push(\"记录类型不匹配，无法追加\");\n      }",
+      "note": "push-记录类型不匹配"
+    },
+    {
+      "old": "    if (!snap.aoa?.length) {\n      push(\"???????????\");\n      return;\n    }",
+      "new": "    if (!snap.aoa?.length) {\n      push(\"目标快照无表头，无法追加\");\n      return;\n    }",
+      "note": "push-目标快照无表头"
+    },
+    {
+      "old": "    if (!headersCompatibleForAppend(currentAoa[0], snap.aoa[0])) {\n      push(\"???????????\");\n      return;\n    }",
+      "new": "    if (!headersCompatibleForAppend(currentAoa[0], snap.aoa[0])) {\n      push(\"表头与目标快照不一致\");\n      return;\n    }",
+      "note": "push-表头不一致"
+    },
+    {
+      "old": "      if (itemFilterDraft.defenseRange) {\n        if (itemFilterDraft.defenseMin.trim() === \"\" && itemFilterDraft.defenseMax.trim() === \"\") {\n          push(\"????????????????\");\n          return;\n        }",
+      "new": "      if (itemFilterDraft.defenseRange) {\n        if (itemFilterDraft.defenseMin.trim() === \"\" && itemFilterDraft.defenseMax.trim() === \"\") {\n          push(\"请填写防护值范围的最小值或最大值\");\n          return;\n        }",
+      "note": "push-防护值minmax-empty"
+    },
+    {
+      "old": "        if (Number.isFinite(min) && Number.isFinite(max) && min > max) {\n          push(\"????????????????\");\n          return;\n        }",
+      "new": "        if (Number.isFinite(min) && Number.isFinite(max) && min > max) {\n          push(\"防护值范围：最小值不能大于最大值\");\n          return;\n        }",
+      "note": "push-防护值minmax-order"
+    },
+    {
+      "old": "    const key = applyItemFilterQuickSearch();\n    if (!key) {\n      push(\"???????????\");\n      return;\n    }",
+      "new": "    const key = applyItemFilterQuickSearch();\n    if (!key) {\n      push(\"当前表无「类型备注」列\");\n      return;\n    }",
+      "note": "push-无类型备注列"
+    },
+    {
+      "old": "    if (!itemFilterOptions.typeRemark.includes(key)) {\n      push(\"???????????\");\n      return;\n    }\n    if (ambiguous) push(`?????????${key}?`);",
+      "new": "    if (!itemFilterOptions.typeRemark.includes(key)) {\n      push(\"无匹配的类型备注筛选项\");\n      return;\n    }\n    if (ambiguous) push(`多个匹配，已选用「${key}」`);",
+      "note": "push-类型备注快捷"
+    },
+    {
+      "old": "    const key = applyTaskFilterQuickSearch();\n    if (!key) {\n      push(\"?????TaskType?????????\");\n      return;\n    }",
+      "new": "    const key = applyTaskFilterQuickSearch();\n    if (!key) {\n      push(\"当前表无「TaskType」或「任务类型」列\");\n      return;\n    }",
+      "note": "push-无TaskType列"
+    },
+    {
+      "old": "    if (!taskFilterOptions.taskType.includes(key)) {\n      push(\"???????????\");\n      return;\n    }\n    if (ambiguous) push(`?????????${key}?`);",
+      "new": "    if (!taskFilterOptions.taskType.includes(key)) {\n      push(\"无匹配的任务类型筛选项\");\n      return;\n    }\n    if (ambiguous) push(`多个匹配，已选用「${key}」`);",
+      "note": "push-任务类型快捷"
+    },
+    {
+      "old": "      if (ridx < 0) {\n        push(\"???????????\");\n        return;\n      }",
+      "new": "      if (ridx < 0) {\n        push(\"请先配置「物品备注」列\");\n        return;\n      }",
+      "note": "push-物品备注列"
+    },
+    {
+      "old": "      if (orderKeys.length === 0) {\n        push(\"??????\");\n        return;\n      }\n      const body = orderKeys.map((t) => `${counts.get(t) ?? 0}?${t}`).join(\"?\");\n      instruction = `??${body}`;",
+      "new": "      if (orderKeys.length === 0) {\n        push(\"无法生成指令\");\n        return;\n      }\n      const body = orderKeys.map((t) => `${counts.get(t) ?? 0}个${t}`).join(\"、\");\n      instruction = `发送刚刚复制的道具:${body}`;",
+      "note": "goGmt-instruction-body"
+    },
+    {
+      "old": "    if (skipBrowser) {\n      push(\"? ???? GMT ???????? ID\");\n    } else {\n      push(\"? ? GMT ?????? Ctrl+V ?????\");\n    }",
+      "new": "    if (skipBrowser) {\n      push(\"请去 GMT 中粘贴指令（已复制到剪贴板）\");\n    } else {\n      push(\"已复制指令，请按弹窗步骤在浏览器中操作\");\n    }",
+      "note": "goGmt-toast"
+    },
+    {
+      "old": "        push(`?????? ${e}`);",
+      "new": "        push(`打开浏览器失败: ${e}`);",
+      "note": "goGmt-openUrl-fail"
+    },
+    {
+      "old": "        push(`? Excel ??: ${msg}`);",
+      "new": "        push(`读 Excel 失败: ${msg}`);",
+      "note": "push-read-excel"
+    },
+    {
+      "old": "      push(\"GMT ???\");\n      setGmtLoggedIn(true);\n    } catch (e) {\n      push(`GMT ????: ${e}`);",
+      "new": "      push(\"GMT 已登录\");\n      setGmtLoggedIn(true);\n    } catch (e) {\n      push(`GMT 登录失败: ${e}`);",
+      "note": "gmt-login-success-fail"
+    },
+    {
+      "old": "      push(\"GMT ???\");\n    } catch (e) {\n      push(`GMT ????: ${e}`);\n    } finally {\n      setGmtSessionChecking(false);\n    }\n  }, [config?.gmtBaseUrl, config?.gmtCookie, config?.gmtEnvId]);",
+      "new": "      push(\"GMT 已退出\");\n    } catch (e) {\n      push(`GMT 退出失败: ${e}`);\n    } finally {\n      setGmtSessionChecking(false);\n    }\n  }, [config?.gmtBaseUrl, config?.gmtCookie, config?.gmtEnvId]);",
+      "note": "gmt-logout"
+    },
+    {
+      "old": "    logOp({ action: \"?????\", outcome: \"success\", message: \"????\", detail: trimmed });",
+      "new": "    logOp({ action: \"重命名快照\", outcome: \"success\", message: \"已重命名\", detail: trimmed });",
+      "note": "logOp-重命名快照"
+    },
+    {
+      "old": "      notify(\"????? ID ??\", { action: \"??????\", outcome: \"failure\" });",
+      "new": "      notify(\"所选行物品 ID 为空\", { action: \"保存发送模板\", outcome: \"failure\" });",
+      "note": "notify-模板无ID"
+    },
+    {
+      "old": "    const defaultTitle = `?? ${new Date(now).toLocaleString(\"zh-CN\", { hour12: false })}?${items.length} ??`;",
+      "new": "    const defaultTitle = `模板 ${new Date(now).toLocaleString(\"zh-CN\", { hour12: false })}（${items.length} 种）`;",
+      "note": "template-defaultTitle"
+    },
+    {
+      "old": "    notify(`????????${title}??${items.length} ????`, {\n      action: \"??????\",\n      outcome: \"success\",\n      detail: title,\n    });",
+      "new": "    notify(`已保存发送模板「${title}」（${items.length} 种道具）`, {\n      action: \"保存发送模板\",\n      outcome: \"success\",\n      detail: title,\n    });",
+      "note": "notify-模板已保存"
+    },
+    {
+      "old": "      notify(\"??????\", { action: \"???????\", outcome: \"failure\" });",
+      "new": "      notify(\"名称不能为空\", { action: \"重命名发送模板\", outcome: \"failure\" });",
+      "note": "notify-模板重命名空"
+    },
+    {
+      "old": "    notify(\"????\", { action: \"???????\", outcome: \"success\", detail: trimmed });",
+      "new": "    notify(\"已重命名\", { action: \"重命名发送模板\", outcome: \"success\", detail: trimmed });",
+      "note": "notify-模板已重命名"
+    },
+    {
+      "old": "      logOp({ action: \"GMT ????\", outcome: \"failure\", message: \"??? GMT\", detail: title });",
+      "new": "      logOp({ action: \"GMT 发放道具\", outcome: \"failure\", message: \"未登录 GMT\", detail: title });",
+      "note": "logOp-未登录GMT"
+    },
+    {
+      "old": "      notify(\"?????\", { action: \"GMT ????\", outcome: \"failure\", detail: title });",
+      "new": "      notify(\"请选择区服\", { action: \"GMT 发放道具\", outcome: \"failure\", detail: title });",
+      "note": "notify-请选择区服"
+    },
+    {
+      "old": "      notify(\"????? ID\", { action: \"GMT ????\", outcome: \"failure\", detail: title });",
+      "new": "      notify(\"请填写账号 ID\", { action: \"GMT 发放道具\", outcome: \"failure\", detail: title });",
+      "note": "notify-请填账号"
+    },
+    {
+      "old": "      notify(\"????? ID ??\", { action: \"GMT ????\", outcome: \"failure\", detail: title });",
+      "new": "      notify(\"模板内物品 ID 为空\", { action: \"GMT 发放道具\", outcome: \"failure\", detail: title });",
+      "note": "notify-模板ID空"
+    },
+    {
+      "old": "      action: \"GMT ????\",\n      outcome: (result.ok ? \"success\" : \"failure\") as OperationOutcome,\n      detail: title,\n    };\n    notify(result.message, log);",
+      "new": "      action: \"GMT 发放道具\",\n      outcome: (result.ok ? \"success\" : \"failure\") as OperationOutcome,\n      detail: title,\n    };\n    notify(result.message, log);",
+      "note": "notify-GMT发放"
+    },
+    {
+      "old": "        notify(readiness.message, { action: \"GMT ????\", outcome: \"failure\" });",
+      "new": "        notify(readiness.message, { action: \"GMT 发放道具\", outcome: \"failure\" });",
+      "note": "notify-gmt-readiness"
+    },
+    {
+      "old": "        result.ok ? `${result.message}?? ${idxs.length} ??` : result.message,\n        {\n          action: \"GMT ????\",\n          outcome: result.ok ? \"success\" : \"failure\",\n          detail: `${result.itemKindCount} ?`,\n        },",
+      "new": "        result.ok ? `${result.message}（${idxs.length} 行）` : result.message,\n        {\n          action: \"GMT 发放道具\",\n          outcome: result.ok ? \"success\" : \"failure\",\n          detail: `${result.itemKindCount} 种`,\n        },",
+      "note": "notify-发放道具结果"
+    },
+    {
+      "old": "          push(`????? ${taskId}`);",
+      "new": "          push(`已完成任务 ${taskId}`);",
+      "note": "push-完成任务"
+    },
+    {
+      "old": "<h2>????</h2>\n          <p className=\"help\">?? Excel ?????????? Excel\\Item.xlsx ? Excel\\Mission.xlsx?</p>",
+      "new": "<h2>首次设置</h2>\n          <p className=\"help\">选择 Excel 工作区根目录，须包含 Excel\\Item.xlsx 与 Excel\\Mission.xlsx。</p>",
+      "note": "wizard-title"
+    },
+    {
+      "old": "pickFolder(\"?? Excel ???\").then(setEx)",
+      "new": "pickFolder(\"选择 Excel 工作区\").then(setEx)",
+      "note": "wizard-pickFolder"
+    },
+    {
+      "old": "              ?????\n              </button>\n            </motion.div>\n          </motion.div>\n          {err ? <div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              ?????",
+      "new": "              选择文件夹\n              </button>\n            </motion.div>\n          </motion.div>\n          {err ? <motion.div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              保存并开始",
+      "note": "wizard-buttons"
+    },
+    {
+      "old": "              ?????\n              </button>\n            </motion.div>\n          </motion.div>\n          {err ? <div className=\"error\">{err}</div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              ?????",
+      "new": "              选择文件夹\n              </button>\n            </div>\n          </motion.div>\n          {err ? <div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              保存并开始",
+      "note": "wizard-buttons-alt"
+    },
+    {
+      "old": "              ?????\n              </button>\n            </div>\n          </div>\n          {err ? <motion.div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              ?????",
+      "new": "              选择文件夹\n              </button>\n            </motion.div>\n          </motion.div>\n          {err ? <div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              保存并开始",
+      "note": "wizard-buttons-alt2"
+    },
+    {
+      "old": "              ?????\n              </button>\n            </div>\n          </div>\n          {err ? <div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              ?????",
+      "new": "              选择文件夹\n              </button>\n            </motion.div>\n          </motion.div>\n          {err ? <div className=\"error\">{err}</motion.div> : null}\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              保存并开始",
+      "note": "wizard-buttons-alt3"
+    },
+    {
+      "old": "onClick={() => void pickFolder(\"?? Excel ???\").then(setEx)}",
+      "new": "onClick={() => void pickFolder(\"选择 Excel 工作区\").then(setEx)}",
+      "note": "wizard-pick-onclick"
+    },
+    {
+      "old": "            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              ?????",
+      "new": "            <button type=\"button\" className=\"btn primary\" onClick={() => void finish()}>\n              保存并开始",
+      "note": "wizard-save-start"
+    },
+    {
+      "old": "              ?????\n              </button>",
+      "new": "              选择文件夹\n              </button>",
+      "note": "wizard-choose-folder"
+    },
+    {
+      "old": "<h2>??</h2>",
+      "new": "<h2>设置</h2>",
+      "note": "settings-title"
+    },
+    {
+      "old": "        title: \"????\",\n        filters: [{ name: \"??\", extensions:",
+      "new": "        title: \"选择壁纸\",\n        filters: [{ name: \"图片\", extensions:",
+      "note": "settings-wallpaper-dialog"
+    },
+    {
+      "old": "        setErr(\"??????\");\n        return;\n      }\n      try {\n        const b64 = await invoke<string>(\"read_file_base64\", { path: p });",
+      "new": "        setErr(\"不支持的图片格式\");\n        return;\n      }\n      try {\n        const b64 = await invoke<string>(\"read_file_base64\", { path: p });",
+      "note": "settings-wallpaper-format"
+    },
+    {
+      "old": "          setErr(\"????????????\");\n          return;\n        }\n        setWallPending({ ext, dataBase64: b64 });",
+      "new": "          setErr(\"图片过大，请选择较小的文件\");\n          return;\n        }\n        setWallPending({ ext, dataBase64: b64 });",
+      "note": "settings-wallpaper-size"
+    },
+    {
+      "old": "        setErr(\"Excel ?????\");\n        return;\n      }\n      const ip = excelItemPath(er);",
+      "new": "        setErr(\"Excel 工作区无效\");\n        return;\n      }\n      const ip = excelItemPath(er);",
+      "note": "settings-excel-invalid"
+    },
+    {
+      "old": "            <label htmlFor=\"settings-theme-bg\">????</label>",
+      "new": "            <label htmlFor=\"settings-theme-bg\">背景底色</label>",
+      "note": "settings-bg-label"
+    },
+    {
+      "old": "              ????????????\n            </p>\n          </motion.div>\n          <div className=\"field\">\n            <label htmlFor=\"settings-theme-bg\">背景底色</label>",
+      "new": "              用于页面底色，与壁纸叠加显示。\n            </p>\n          </motion.div>\n          <div className=\"field\">\n            <label htmlFor=\"settings-theme-bg\">背景底色</label>",
+      "note": "settings-accent-help"
+    },
+    {
+      "old": "              ??????????????????\n            </p>\n          </motion.div>\n          <div className=\"field\">\n            <label>????</label>",
+      "new": "              浅色背景时会自动切换为深色文字以保证可读性。\n            </p>\n          </motion.div>\n          <div className=\"field\">\n            <label>桌面壁纸</label>",
+      "note": "settings-bg-help"
+    },
+    {
+      "old": "              ??????????????????\n            </p>\n            <div style={{ marginTop: \"0.5rem\" }}>\n              <label htmlFor=\"settings-wall-opacity\"",
+      "new": "              选图后先预览，点「保存」后写入应用目录；取消关闭设置不保存新图。\n            </p>\n            <div style={{ marginTop: \"0.5rem\" }}>\n              <label htmlFor=\"settings-wall-opacity\"",
+      "note": "settings-wall-help"
+    },
+    {
+      "old": "                ???? {wallOpacityPct}%",
+      "new": "                壁纸不透明度 {wallOpacityPct}%",
+      "note": "settings-wall-opacity"
+    },
+    {
+      "old": "            {wallPending ? <p className=\"help\">???????</p> : null}",
+      "new": "            {wallPending ? <p className=\"help\">已选择图片（待保存）</p> : null}",
+      "note": "settings-wall-pending"
+    },
+    {
+      "old": "              <button type=\"button\" className=\"btn\" onClick={() => setThemeHex(DEFAULT_THEME_ACCENT_HEX)}>\n                ??\n              </button>",
+      "new": "              <button type=\"button\" className=\"btn\" onClick={() => setThemeHex(DEFAULT_THEME_ACCENT_HEX)}>\n                恢复默认色\n              </button>",
+      "note": "settings-restore-accent"
+    },
+    {
+      "old": "              <button type=\"button\" className=\"btn\" onClick={() => setThemeBgHex(DEFAULT_THEME_BACKGROUND_HEX)}>\n                ??\n              </button>",
+      "new": "              <button type=\"button\" className=\"btn\" onClick={() => setThemeBgHex(DEFAULT_THEME_BACKGROUND_HEX)}>\n                恢复默认背景\n              </button>",
+      "note": "settings-restore-bg"
+    },
+    {
+      "old": "              <button type=\"button\" className=\"btn\" onClick={() => void pickWallpaper()}>\n                ??\n              </button>\n              <button\n                type=\"button\"\n                className=\"btn\"\n                onClick={() => {\n                  setWallPending(null);\n                  setWallRelDraft(null);\n                }}\n              >\n                ??\n              </button>",
+      "new": "              <button type=\"button\" className=\"btn\" onClick={() => void pickWallpaper()}>\n                选择本地图片…\n              </button>\n              <button\n                type=\"button\"\n                className=\"btn\"\n                onClick={() => {\n                  setWallPending(null);\n                  setWallRelDraft(null);\n                }}\n              >\n                清除壁纸\n              </button>",
+      "note": "settings-wall-btns"
+    },
+    {
+      "old": "            <button\n              type=\"button\"\n              className=\"btn\"\n              onClick={() => {\n                restorePreviewFromSavedConfig();\n                setSettingsOpen(false);\n              }}\n            >\n              ??\n            </button>\n            <button type=\"button\" className=\"btn primary\" onClick={() => void save()}>\n              ??\n            </button>",
+      "new": "            <button\n              type=\"button\"\n              className=\"btn\"\n              onClick={() => {\n                restorePreviewFromSavedConfig();\n                setSettingsOpen(false);\n              }}\n            >\n              取消\n            </button>\n            <button type=\"button\" className=\"btn primary\" onClick={() => void save()}>\n              保存\n            </button>",
+      "note": "settings-cancel-save"
+    },
+    {
+      "old": "<h2>??? ? {hiddenPanel === \"item\" ? \"??\" : \"??\"}</h2>\n          <p className=\"help\">????????????????????????????????</p>",
+      "new": "<h2>隐藏字段 · {hiddenPanel === \"item\" ? \"道具\" : \"任务\"}</h2>\n          <p className=\"help\">勾选即隐藏该列；不可隐藏的列已禁用。点「应用」后写入配置并重新加载主表。</p>",
+      "note": "hidden-panel"
+    },
+    {
+      "old": "{h || \"(???)\"}",
+      "new": "{h || \"(空)\"}",
+      "note": "hidden-empty-header"
+    },
+    {
+      "old": "                    <span className=\"muted\">??</span>\n                    <input\n                      type=\"checkbox\"\n                      checked={hidden.has(h)}\n                      onChange={(e) => {\n                        const nextH = new Set(hiddenPanelDraft ?? [...rawSaved]);",
+      "new": "                    <span className=\"muted\">隐藏</span>\n                    <input\n                      type=\"checkbox\"\n                      checked={hidden.has(h)}\n                      onChange={(e) => {\n                        const nextH = new Set(hiddenPanelDraft ?? [...rawSaved]);",
+      "note": "hidden-hide-label"
+    },
+    {
+      "old": "              ??\n            </button>\n            <button\n              type=\"button\"\n              className=\"btn primary\"\n              disabled={applyDisabled}\n              onClick={() =>\n                void (async () => {\n                  if (!config) return;\n                  const key = hiddenPanel === \"item\" ? \"hiddenItemColumns\" : \"hiddenTaskColumns\";",
+      "new": "              取消\n            </button>\n            <button\n              type=\"button\"\n              className=\"btn primary\"\n              disabled={applyDisabled}\n              onClick={() =>\n                void (async () => {\n                  if (!config) return;\n                  const key = hiddenPanel === \"item\" ? \"hiddenItemColumns\" : \"hiddenTaskColumns\";",
+      "note": "hidden-cancel-apply"
+    },
+    {
+      "old": "              ??\n            </button>\n          </motion.div>\n        </motion.div>\n      </motion.div>\n    );\n  };\n\n  const GmtLoginModal",
+      "new": "              应用\n            </button>\n          </motion.div>\n        </motion.div>\n      </motion.div>\n    );\n  };\n\n  const GmtLoginModal",
+      "note": "hidden-apply-btn"
+    },
+    {
+      "old": "<h2>GMT ??</h2>\n          <p className=\"help\">\n            ???????? Garena SSO ???????????? Cookie?\n          </p>\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn\" onClick={() => void openGmtLoginWindow()}>\n              ??\n            </button>\n            <button type=\"button\" className=\"btn primary\" onClick={() => void completeGmtLogin()}>\n              ??\n            </button>\n            <button\n              type=\"button\"\n              className=\"btn\"\n              onClick={() => {\n                setGmtLoginModalOpen(false);\n                void gmtCloseLoginWindow();\n              }}\n            >\n              ??\n            </button>",
+      "new": "<h2>GMT 登录</h2>\n          <p className=\"help\">\n            将打开内置浏览器完成 Garena SSO 登录；完成后点「完成登录」保存 Cookie。\n          </p>\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn\" onClick={() => void openGmtLoginWindow()}>\n              打开登录\n            </button>\n            <button type=\"button\" className=\"btn primary\" onClick={() => void completeGmtLogin()}>\n              完成登录\n            </button>\n            <button\n              type=\"button\"\n              className=\"btn\"\n              onClick={() => {\n                setGmtLoginModalOpen(false);\n                void gmtCloseLoginWindow();\n              }}\n            >\n              取消\n            </button>",
+      "note": "gmt-login-modal"
+    },
+    {
+      "old": "          <h2>? GMT ??</h2>\n          <p className=\"help\">\n            {repeatVisit ? (\n              <>\n                ? ? easydone ???? <b>GMT ?????</b> ??????\n              </>\n            ) : (\n              <>\n                ? ?? GM ????? <b>Ctrl+V</b> ?????\n              </>\n            )}\n          </p>\n          <div className=\"field\">\n            <label>????</label>\n            <textarea className=\"bookmark\" readOnly value={instruction} />\n          </div>\n          <div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => setGoGmtModal(null)}>\n              ???\n            </button>",
+      "new": "          <h2>去 GMT 执行（需要手动挂载）</h2>\n          <p className=\"help\">\n            {repeatVisit ? (\n              <>\n                ① 请去已打开的 GMT 页面，在 GM 助手输入框 <b>Ctrl+V</b> 粘贴指令（本次不再打开浏览器）。\n              </>\n            ) : (\n              <>\n                ① 指令已复制到剪贴板（见下方预览）。② 在 GM 助手输入框 <b>Ctrl+V</b> 粘贴即可。\n              </>\n            )}\n          </p>\n          <div className=\"field\">\n            <label>指令预览</label>\n            <textarea className=\"bookmark\" readOnly value={instruction} />\n          </div>\n          <motion.div className=\"btn-row\">\n            <button type=\"button\" className=\"btn primary\" onClick={() => setGoGmtModal(null)}>\n              知道了\n            </button>",
+      "note": "gogmt-modal"
+    },
+    {
+      "old": "    return <div className=\"empty\">?????</div>;\n  }\n\n  return (\n    <div className=\"app\">",
+      "new": "    return <div className=\"empty\">加载配置…</div>;\n  }\n\n  return (\n    <div className=\"app\">",
+      "note": "loading-config"
+    },
+    {
+      "old": "<h2>???????</h2>\n            <p className=\"help\">\n              ???????? {snapshotNameModal.source === \"item\" ? \"??\" : \"??\"} ??? {snapshotNameModal.rowCount}{\" \"}\n              ??????????????????????",
+      "new": "<h2>保存快照到左侧</h2>\n            <p className=\"help\">\n              将保存当前勾选的 {snapshotNameModal.source === \"item\" ? \"道具\" : \"任务\"} 行（共 {snapshotNameModal.rowCount}{\" \"}\n              行）到左侧快照列表。可修改标题后点「保存」。",
+      "note": "snapshot-save-modal"
+    },
+    {
+      "old": "<h2>?????</h2>\n            <div className=\"field\">\n              <label htmlFor=\"snapshot-rename-input\">??</label>",
+      "new": "<h2>重命名快照</h2>\n            <div className=\"field\">\n              <label htmlFor=\"snapshot-rename-input\">名称</label>",
+      "note": "snapshot-rename-modal"
+    },
+    {
+      "old": "<h2>????</h2>\n            <p className=\"help\">\n              ???????<span title={pendingDeleteSnapshot.title}>{pendingDeleteSnapshot.title}</span>??????????",
+      "new": "<h2>删除快照</h2>\n            <p className=\"help\">\n              确定删除快照「<span title={pendingDeleteSnapshot.title}>{pendingDeleteSnapshot.title}</span>」？此操作不可恢复。",
+      "note": "snapshot-delete-modal"
+    },
+    {
+      "old": "<h2>???????</h2>\n            <p className=\"help\">\n              ???????? {templateNameModal.items.length} ????????? ID??????????????",
+      "new": "<h2>保存为发送模板</h2>\n            <p className=\"help\">\n              将保存当前勾选的 {templateNameModal.items.length} 种道具（含物品 ID 与数量）到左侧模板列表。",
+      "note": "template-save-modal"
+    },
+    {
+      "old": "<label htmlFor=\"template-title-input\">??</label>",
+      "new": "<label htmlFor=\"template-title-input\">标题</label>",
+      "note": "template-title-label"
+    },
+    {
+      "old": "<h2>???????</h2>\n            <motion.div className=\"field\">\n              <label htmlFor=\"template-rename-input\">??</label>",
+      "new": "<h2>重命名发送模板</h2>\n            <div className=\"field\">\n              <label htmlFor=\"template-rename-input\">名称</label>",
+      "note": "template-rename-modal"
+    },
+    {
+      "old": "<h2>??????</h2>\n            <p className=\"help\">\n              ?????????<span title={pendingDeleteTemplate.title}>{pendingDeleteTemplate.title}</span>??????????",
+      "new": "<h2>删除发送模板</h2>\n            <p className=\"help\">\n              确定删除发送模板「<span title={pendingDeleteTemplate.title}>{pendingDeleteTemplate.title}</span>」？此操作不可恢复。",
+      "note": "template-delete-modal"
+    },
+    {
+      "old": "<h2>???? ? {sendTemplateModal.title}</h2>\n            <p className=\"help\">?????????????1?9999??</p>",
+      "new": "<h2>发送模板 · {sendTemplateModal.title}</h2>\n            <p className=\"help\">调整每种道具数量（1–9999）后发送。</p>",
+      "note": "send-template-preview-title"
+    },
+    {
+      "old": "<th>?? ID</th>\n                    <th>??/??</th>\n                    <th>??</th>",
+      "new": "<th>物品 ID</th>\n                    <th>名称/备注</th>\n                    <th>数量</th>",
+      "note": "send-template-table-head"
+    },
+    {
+      "old": "{it.label?.trim() ? it.label : \"?\"}",
+      "new": "{it.label?.trim() ? it.label : \"—\"}",
+      "note": "send-template-empty-label"
+    },
+    {
+      "old": "onClick={() => void sendTemplateItemsNow(m.title, m.draftItems).then((ok) => {\n                    if (ok) setSendTemplateModal(null);\n                  });\n                }}\n              >\n                ??\n              </button>",
+      "new": "onClick={() => void sendTemplateItemsNow(m.title, m.draftItems).then((ok) => {\n                    if (ok) setSendTemplateModal(null);\n                  });\n                }}\n              >\n                发送\n              </button>",
+      "note": "send-template-send-btn"
+    },
+    {
+      "old": "              push(\"??????????\");\n            }}\n          >\n            ??\n          </button>\n          <button\n            type=\"button\"\n            className=\"btn\"\n            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim()}\n            onClick={() => openTableFilterModal()}\n          >\n            ??",
+      "new": "              push(\"已从磁盘重新加载表格\");\n            }}\n          >\n            刷新\n          </button>\n          <button\n            type=\"button\"\n            className=\"btn\"\n            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim()}\n            onClick={() => openTableFilterModal()}\n          >\n            筛选",
+      "note": "topbar-refresh-filter"
+    },
+    {
+      "old": "              ???\n            </label>",
+      "new": "              可交易\n            </label>",
+      "note": "gmt-tradable"
+    },
+    {
+      "old": "                <span>??????????</span>\n                <button type=\"button\" className=\"btn btn-tiny\" onClick={() => clearLog()}>\n                  ??\n                </button>",
+      "new": "                <span>操作日志（本会话）</span>\n                <button type=\"button\" className=\"btn btn-tiny\" onClick={() => clearLog()}>\n                  清空\n                </button>",
+      "note": "op-log-head"
+    },
+    {
+      "old": "                  <p className=\"help muted\">??????</p>",
+      "new": "                  <p className=\"help muted\">暂无操作记录</p>",
+      "note": "op-log-empty"
+    },
+    {
+      "old": "          <button type=\"button\" className=\"btn\" disabled={wizardOpen} onClick={() => setSettingsOpen(true)}>\n            ??\n          </button>",
+      "new": "          <button type=\"button\" className=\"btn\" disabled={wizardOpen} onClick={() => setSettingsOpen(true)}>\n            设置\n          </button>",
+      "note": "topbar-settings"
+    },
+    {
+      "old": "                    ?? ? {srcLabel} ? {rowCount} ? ? {timeStr}",
+      "new": "                    快照 · {srcLabel} · {rowCount} 行 · {timeStr}",
+      "note": "sidebar-snapshot-sub"
+    },
+    {
+      "old": "                  <span className=\"card-badge-send\">??</span>",
+      "new": "                  <span className=\"card-badge-send\">发送</span>",
+      "note": "sidebar-template-badge"
+    },
+    {
+      "old": "                  ?? ? {t.items.length} ??? ? {timeStr}",
+      "new": "                  模板 · {t.items.length} 种道具 · {timeStr}",
+      "note": "sidebar-template-sub"
+    },
+    {
+      "old": "            ??????? / ?????????????????????????????????/???          </p>",
+      "new": "            右键「全部道具 / 全部任务」打开隐藏列；右键表头可冻结列；右键快照/模板可重命名或删除。          </p>",
+      "note": "sidebar-help"
+    },
+    {
+      "old": "              {wizardOpen\n                ? \"????????\"\n                : !config.excelWorkspaceRoot?.trim()\n                  ? \"???\"\n                  : loadError\n                    ? \"??????\"\n                    : itemAoa == null && taskAoa == null\n                      ? excelLoadMessageModeRef.current === \"refresh\"\n                        ? \"???\"\n                        : \"????????\"\n                      : \"???\"}",
+      "new": "              {wizardOpen\n                ? \"请先完成设置向导\"\n                : !config.excelWorkspaceRoot?.trim()\n                  ? \"无数据\"\n                  : loadError\n                    ? \"暂无表格数据\"\n                    : itemAoa == null && taskAoa == null\n                      ? excelLoadMessageModeRef.current === \"refresh\"\n                        ? \"刷新中\"\n                        : \"获取本地数据中…\"\n                      : \"无数据\"}",
+      "note": "main-empty-states"
+    },
+    {
+      "old": "                        <input type=\"checkbox\" disabled aria-label=\"??\" />",
+      "new": "                        <input type=\"checkbox\" disabled aria-label=\"全选\" />",
+      "note": "aria-select-all"
+    },
+    {
+      "old": "                            title=\"??\"\n                            aria-label={`${name || `?${ci + 1}`} ??`}",
+      "new": "                            title=\"降序\"\n                            aria-label={`${name || `列${ci + 1}`} 降序`}",
+      "note": "th-sort-desc"
+    },
+    {
+      "old": "                            title=\"??\"\n                            aria-label={`${name || `?${ci + 1}`} ??`}\n                            onClick={(e) => {\n                              e.stopPropagation();\n                              setTableSort({ colIndex: ci, descending: false });\n                            }}\n                          >\n                            ?",
+      "new": "                            title=\"升序\"\n                            aria-label={`${name || `列${ci + 1}`} 升序`}\n                            onClick={(e) => {\n                              e.stopPropagation();\n                              setTableSort({ colIndex: ci, descending: false });\n                            }}\n                          >\n                            ↑",
+      "note": "th-sort-asc"
+    },
+    {
+      "old": "                              <span>{name || `??{ci + 1}`}</span>",
+      "new": "                              <span>{name || `列${ci + 1}`}</span>",
+      "note": "th-col-fallback"
+    },
+    {
+      "old": "                              <span className=\"muted\">??</span>\n                              <input\n                                type=\"checkbox\"\n                                checked={hiddenSet.has(name)}\n                                onChange={(e) => void toggleHideColumn(name, e.target.checked)}\n                                title=\"??????\"",
+      "new": "                              <span className=\"muted\">隐藏</span>\n                              <input\n                                type=\"checkbox\"\n                                checked={hiddenSet.has(name)}\n                                onChange={(e) => void toggleHideColumn(name, e.target.checked)}\n                                title=\"隐藏此列\"",
+      "note": "th-hide-col"
+    },
+    {
+      "old": "          <button type=\"button\" onClick={() => openSnapshotNameModal()}>\n            ???????\n          </button>\n          {isItemTableView ? (\n            <button type=\"button\" onClick={() => openTemplateNameModal()}>\n              ???????\n            </button>",
+      "new": "          <button type=\"button\" onClick={() => openSnapshotNameModal()}>\n            保存选中到左侧\n          </button>\n          {isItemTableView ? (\n            <button type=\"button\" onClick={() => openTemplateNameModal()}>\n              保存为发送模板\n            </button>",
+      "note": "ctx-save-snapshot-template"
+    },
+    {
+      "old": "            const label = s.title.length > 22 ? `${s.title.slice(0, 20)}?` : s.title;",
+      "new": "            const label = s.title.length > 22 ? `${s.title.slice(0, 20)}…` : s.title;",
+      "note": "ctx-snapshot-truncate"
+    },
+    {
+      "old": "                ????{label}?",
+      "new": "                添加到「{label}」",
+      "note": "ctx-append-snapshot"
+    },
+    {
+      "old": "              if (src === \"item\") return \"? GMT ???\";\n              if (src === \"task\") return \"? GMT ????\";\n              return \"? GMT ??\";",
+      "new": "              if (src === \"item\") return \"发放道具\";\n              if (src === \"task\") return \"完成任务\";\n              return \"去 GMT 执行\";",
+      "note": "ctx-gmt-labels"
+    },
+    {
+      "old": "            ????\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const { id, title } = snapshotSidebarMenu;\n              setSnapshotSidebarMenu(null);\n              setPendingDeleteSnapshot({ id, title });\n            }}\n          >\n            ??",
+      "new": "            重命名\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const { id, title } = snapshotSidebarMenu;\n              setSnapshotSidebarMenu(null);\n              setPendingDeleteSnapshot({ id, title });\n            }}\n          >\n            删除",
+      "note": "snapshot-sidebar-menu"
+    },
+    {
+      "old": "            ????\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const tpl = config.sendTemplates.find((t) => t.id === templateSidebarMenu.id);\n              setTemplateSidebarMenu(null);\n              if (tpl) {\n                setSendTemplateModal({",
+      "new": "            一键发送\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const tpl = config.sendTemplates.find((t) => t.id === templateSidebarMenu.id);\n              setTemplateSidebarMenu(null);\n              if (tpl) {\n                setSendTemplateModal({",
+      "note": "template-sidebar-send"
+    },
+    {
+      "old": "            ?????\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const { id, title } = templateSidebarMenu;\n              setTemplateSidebarMenu(null);\n              setTemplateRenameModal({ id, draft: title });\n            }}\n          >\n            ???",
+      "new": "            编辑并发送\n          </button>\n          <button\n            type=\"button\"\n            onClick={() => {\n              const { id, title } = templateSidebarMenu;\n              setTemplateSidebarMenu(null);\n              setTemplateRenameModal({ id, draft: title });\n            }}\n          >\n            重命名",
+      "note": "template-sidebar-edit"
+    },
+    {
+      "old": "          <button type=\"button\" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>\n            ????\n          </button>\n          <button type=\"button\" onClick={() => void applyFreezeThrough(null)}>\n            ????",
+      "new": "          <button type=\"button\" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>\n            冻结此列\n          </button>\n          <button type=\"button\" onClick={() => void applyFreezeThrough(null)}>\n            取消冻结",
+      "note": "column-freeze-menu"
+    },
+    {
+      "old": "              title=\"??????\"\n              aria-grabbed={dragFrom === index}\n            >\n              ??",
+      "new": "              title=\"拖拽调整顺序\"\n              aria-grabbed={dragFrom === index}\n            >\n              ⋮⋮",
+      "note": "filter-dnd-handle"
+    },
+    {
+      "old": "              title=\"????????\"\n              aria-grabbed={dragFrom === index}\n            >\n              ??",
+      "new": "              title=\"拖拽调整区块顺序\"\n              aria-grabbed={dragFrom === index}\n            >\n              ⋮⋮",
+      "note": "filter-section-dnd-handle"
+    },
+    {
+      "old": "              <button type=\"button\" className=\"btn\" onClick={() => setSendTemplateModal(null)}>\n                ??\n              </button>",
+      "new": "              <button type=\"button\" className=\"btn\" onClick={() => setSendTemplateModal(null)}>\n                取消\n              </button>",
+      "note": "send-template-cancel"
+    }
+  ]
+}

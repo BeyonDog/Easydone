@@ -1,0 +1,14 @@
+node_modules
+dist
+src-tauri/target
+.DS_Store
+*.local
+app-icon.png
+src-tauri/gen
+keys/*.key
+publish.config.json
+.env
+.env.local
+Update/*
+!Update/.gitkeep
+# ReleaseArtifacts/  intentionally tracked (per-branch NSIS snapshots for GitHub saves)

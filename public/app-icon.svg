@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" aria-hidden="true">
+  <defs>
+    <!-- 单元格渐变（灰度，模拟表格底色） -->
+    <linearGradient id="gCell0" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2f2f2f" />
+      <stop offset="100%" stop-color="#141414" />
+    </linearGradient>
+    <linearGradient id="gCell1" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1c1c1c" />
+      <stop offset="50%" stop-color="#3a3a3a" />
+      <stop offset="100%" stop-color="#161616" />
+    </linearGradient>
+    <linearGradient id="gCell2" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#121212" />
+      <stop offset="55%" stop-color="#323232" />
+      <stop offset="100%" stop-color="#1a1a1a" />
+    </linearGradient>
+    <linearGradient id="gCell3" x1="100%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#282828" />
+      <stop offset="100%" stop-color="#0a0a0a" />
+    </linearGradient>
+    <!-- 一格一渐变 + 表格线 -->
+    <pattern id="tableCells" patternUnits="userSpaceOnUse" width="32" height="32">
+      <rect width="16" height="16" fill="url(#gCell0)" />
+      <rect x="16" width="16" height="16" fill="url(#gCell1)" />
+      <rect y="16" width="16" height="16" fill="url(#gCell2)" />
+      <rect x="16" y="16" width="16" height="16" fill="url(#gCell3)" />
+      <path
+        d="M 0 0 H32 V32 H0 Z M 16 0 V32 M 0 16 H32"
+        fill="none"
+        stroke="#353535"
+        stroke-width="0.9"
+      />
+    </pattern>
+    <clipPath id="iconClip">
+      <rect x="14" y="14" width="228" height="228" rx="52" ry="52" />
+    </clipPath>
+    <filter id="edShadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="1.5" dy="2.5" stdDeviation="1.4" flood-color="#000000" flood-opacity="0.55" />
+    </filter>
+  </defs>
+  <!-- 表格式灰度底 -->
+  <g clip-path="url(#iconClip)">
+    <rect x="14" y="14" width="228" height="228" fill="#0a0a0a" />
+    <rect x="14" y="14" width="228" height="228" fill="url(#tableCells)" />
+  </g>
+  <!-- 外轮廓：深灰，无红框 -->
+  <rect x="14" y="14" width="228" height="228" rx="52" ry="52" fill="none" stroke="#3d3d3d" stroke-width="1.5" />
+  <!-- 内层深灰圆角块（参考层次，无红框、无描边） -->
+  <rect x="38" y="38" width="180" height="180" rx="36" ry="36" fill="#161616" />
+  <!-- 白字 ED：Aharoni 加粗斜体 + 阴影 -->
+  <text
+    x="128"
+    y="132"
+    fill="#f7f7f7"
+    font-family="Aharoni, Franklin Gothic Medium, Arial Narrow, sans-serif"
+    font-size="98"
+    font-weight="900"
+    font-style="italic"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    filter="url(#edShadow)"
+  >ED</text>
+</svg>
