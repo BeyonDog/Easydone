@@ -17,7 +17,7 @@ export function SettingsUpdateSection({
 }: Props) {
   const statusLooksLikeError =
     statusMessage != null &&
-    (/失败|无法|不正确|缺少|未配置|不是 JSON/.test(statusMessage) ||
+    (/失败|无法|不正确|缺少|未配置|不是 JSON|签名|手动安装|公钥/.test(statusMessage) ||
       statusMessage.includes("latest.json"));
 
   return (

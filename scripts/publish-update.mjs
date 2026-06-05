@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { assertSigningKeyConsistent } from "./signing-key-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -147,7 +148,7 @@ export function findNsisArtifacts(options = {}) {
 export function loadSigningEnv() {
   const keyPath = process.env.TAURI_SIGNING_PRIVATE_KEY_PATH || path.join(root, "keys", "easydone-updater.key");
   if (!fs.existsSync(keyPath)) {
-    throw new Error(`签名私钥不存在: ${keyPath}，请先运行 npm run tauri signer generate`);
+    throw new Error(`签名私钥不存在: ${keyPath}，仅首次请运行 npm run signing:init（禁止覆盖已有密钥）`);
   }
   const keyContent = fs.readFileSync(keyPath, "utf8").trim();
   if (!keyContent) {
@@ -179,6 +180,7 @@ function runUnlockBuild() {
 }
 
 function runBuild() {
+  assertSigningKeyConsistent();
   runUnlockBuild();
   const { keyPath, env, signingPasswordConfigured } = loadSigningEnv();
   console.log(`[publish] signing key: ${keyPath}`);
@@ -349,6 +351,7 @@ export async function buildOnly() {
  * @param {{ version?: string, notes?: string }} [preset] already-applied version (build-publish)
  */
 export async function publishArtifacts(opts = {}, preset = null) {
+  assertSigningKeyConsistent();
   const cfg = loadConfig();
   const versionCtx = preset ?? prepareVersion(opts);
   const artifacts = findNsisArtifacts({

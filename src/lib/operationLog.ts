@@ -12,7 +12,7 @@ export interface GmtOperationPayload {
   envName: string;
   accountId: string;
   items: GmtLogItem[];
-  source?: "item-table" | "template" | "task" | "add-exp" | "global-mail";
+  source?: "item-table" | "template" | "task" | "add-exp" | "add-money" | "global-mail";
   templateTitle?: string;
 }
 

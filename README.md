@@ -53,10 +53,10 @@ npm.cmd run tauri build
 ### 一次性准备
 
 1. **签名密钥**（已生成则跳过）：
-   ```bash
-   npm.cmd run tauri signer generate -- --ci -w keys/easydone-updater.key -f
-   ```
-   将 `keys/easydone-updater.key.pub` 内容写入 `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`（仓库已含一份开发用公钥）。
+   - 仓库已含公钥锁定文件 `keys/signing-key.lock.json` 与 `tauri.conf.json` 中的 `pubkey`（须三者一致：lock、`.pub`、私钥）。
+   - 仅**首次**无 `keys/easydone-updater.key` 时运行 `npm run signing:init`（**禁止** `signer generate -f` 覆盖）。
+   - 日常发版前运行 `npm run signing:check`，或由发版 GUI / 构建脚本自动校验。
+   - **永不换钥**：换钥后旧版客户端无法自动更新，需同事手动安装；easydoneKey 备份是防**丢失**私钥，不能替代「不换钥」策略。
 
 2. **发版配置**：`publish.config.json` 不提交 Git（见 `.gitignore`）。首次发版可任选其一：
    - 启动发版 GUI（`start-publish-gui.bat` / `npm run publish:gui`）时会从 `publish.config.example.json` **自动复制**生成；
@@ -82,6 +82,12 @@ npm.cmd run tauri build
    - 须先执行「仅构建」或「构建并发布」生成 NSIS，再点「保存到 xxx」。
    - 发版机须安装 **Git**；`publish.config.json` 中可配置 `github` 段（见 `publish.config.example.json`）。若 GUI 提示未检测到 Git 但本机已安装，可在 `github.gitPath` 指定 `git.exe` 完整路径，或依赖脚本自动探测 `%LOCALAPPDATA%\\Programs\\Git` 等常见目录。HTTPS 推送可设置环境变量 `GITHUB_TOKEN` 或 `github.token`（勿提交仓库）。
    - 安装包副本写入 `ReleaseArtifacts/<分支>/` 并随源码一并提交；各槽位上次保存时间与项目大小记录在本地 `Update/repo-saves.json`（不提交 Git）。
+4. **发版凭据备份（easydoneKey）**：发版 GUI 最下方「发版凭据备份」区，一键将 `keys/easydone-updater.key`、`publish.config.json`、`publish.config.example.json` 推送到 [BeyonDog/easydoneKey](https://github.com/BeyonDog/easydoneKey)（默认分支 `main`，可在 `publish.config.json` 的 `keyBackup` 段修改远程地址）。
+   - 推送认证与代码存档相同：`GITHUB_TOKEN` 或 `publish.config.json` → `github.token`（HTTPS）。
+   - 上次成功时间记录在本地 `Update/key-backup.json`（不提交 Git）。
+   - **安全警告**：该仓库若为 **Public**，任何人可克隆并拿到签名私钥与配置，进而伪造带签名的更新包。仅建议在可接受风险时使用；长期请将仓库改为 **Private**，并优先用离线加密备份私钥。
+   - **换机恢复**：`git clone https://github.com/BeyonDog/easydoneKey.git`，将 `easydone-updater.key` 拷到 `keys/`，将两个 `publish.config*.json` 拷到项目根，再安装 Node/Rust/Git 即可发版（内网 Update HTTP 仍需单独配置）。
+   - 命令行：`node scripts/backup-key-repo.mjs`
 - **命令行**：
   - `node scripts/publish-update.mjs --build-only` — 仅构建
   - `node scripts/publish-update.mjs --publish-only [--version V] [--notes "..."]` — 仅发布
@@ -102,3 +108,6 @@ npm.cmd run tauri build
 | 发版机本机提示「无法连接」但浏览器能开 8080 | 需安装含 **Rust 预检** 的新客户端（`tauri build` 后重装）；并运行 `npm run verify:update` |
 | 设置/顶栏检查更新报错 | 看中文报错；确认 `start-update-server.bat` 与发版产物 |
 | 发版 GUI 报「发布校验失败」 | 按日志修 HTTP 或 `Update/` 内文件缺失问题后重新发版 |
+| 自动更新报 `different key` | 客户端公钥与发版私钥不一致；用弹窗手动安装链接或内网安装包重装一版；勿无计划 `signer generate -f` |
+| 凭据备份 push 失败 | 配置 `GITHUB_TOKEN` / `github.token`；确认对 easydoneKey 有写权限；日志见 `Update/publish-gui.log` |
+| 发版报「禁止换钥」/ signing-guard 失败 | 恢复 `tauri.conf` 的 `pubkey` 与 `keys/signing-key.lock.json`、`easydone-updater.key.pub` 一致；勿改 lock；确认真私钥未丢 |

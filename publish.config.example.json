@@ -4,10 +4,16 @@
   "manifestFileName": "latest.json",
   "installerFileName": "easydone-setup.exe",
   "requireInstallerSignature": true,
+  "forbidKeyRotation": true,
   "github": {
     "remote": "git@github.com:BeyonDog/Easydone.git",
     "remoteName": "origin",
     "branches": ["main", "second", "third"],
     "artifactsDir": "ReleaseArtifacts"
+  },
+  "keyBackup": {
+    "remote": "https://github.com/BeyonDog/easydoneKey.git",
+    "remoteName": "origin",
+    "branch": "main"
   }
 }

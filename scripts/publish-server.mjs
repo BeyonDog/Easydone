@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { isSigningPasswordConfigured, loadSigningEnv } from "./publish-update.mjs";
 import { isGitAvailable as resolveIsGitAvailable } from "./resolve-git.mjs";
 import { ensurePublishConfig } from "./ensure-publish-config.mjs";
+import { checkSigningKeyConsistent } from "./signing-key-guard.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const guiDir = path.join(root, "publish-gui");
@@ -16,6 +17,7 @@ const PORT = Number(process.env.PUBLISH_GUI_PORT || 1421);
 const LOG_FILE = path.join(root, "Update", "publish-gui.log");
 const JOB_RESULT_FILE = path.join(root, "Update", "publish-job-last.json");
 const REPO_SAVES_FILE = path.join(root, "Update", "repo-saves.json");
+const KEY_BACKUP_META_FILE = path.join(root, "Update", "key-backup.json");
 const DEFAULT_REPO_BRANCHES = ["main", "second", "third"];
 
 const SIGNING_STALL_MS = 45_000;
@@ -35,6 +37,16 @@ const publishJob = {
 const repoSaveJob = {
   running: false,
   branch: null,
+  log: "",
+  result: null,
+  error: null,
+  child: null,
+  startedAt: null,
+};
+
+/** @type {{ running: boolean, log: string, result: object | null, error: string | null, child: import('node:child_process').ChildProcess | null, startedAt: number | null }} */
+const keyBackupJob = {
+  running: false,
   log: "",
   result: null,
   error: null,
@@ -63,6 +75,27 @@ function githubConfigFromPublish(pubCfg, pubExample) {
   };
 }
 
+function keyBackupConfigFromPublish(pubCfg, pubExample) {
+  const cfg = pubCfg || pubExample || {};
+  const kb = cfg.keyBackup ?? {};
+  return {
+    remote: kb.remote || "https://github.com/BeyonDog/easydoneKey.git",
+    branch: kb.branch || "main",
+  };
+}
+
+function keyBackupFilesReady() {
+  return (
+    fs.existsSync(path.join(root, "keys", "easydone-updater.key")) &&
+    fs.existsSync(path.join(root, "publish.config.json")) &&
+    fs.existsSync(path.join(root, "publish.config.example.json"))
+  );
+}
+
+function readKeyBackupMeta() {
+  return readJsonSafe(KEY_BACKUP_META_FILE);
+}
+
 function defaultRepoSaves(branches = DEFAULT_REPO_BRANCHES) {
   const slots = {};
   for (const b of branches) {
@@ -88,6 +121,109 @@ function healRepoSaveJobState() {
   if (repoSaveJob.running && repoSaveJob.child == null) {
     repoSaveJob.running = false;
   }
+}
+
+function healKeyBackupJobState() {
+  if (keyBackupJob.running && keyBackupJob.child == null) {
+    keyBackupJob.running = false;
+  }
+}
+
+function resetKeyBackupJob() {
+  if (keyBackupJob.child) {
+    try {
+      keyBackupJob.child.kill();
+    } catch {
+      /* ignore */
+    }
+  }
+  keyBackupJob.running = false;
+  keyBackupJob.child = null;
+  keyBackupJob.log = "";
+  keyBackupJob.result = null;
+  keyBackupJob.error = null;
+  keyBackupJob.startedAt = null;
+}
+
+function appendKeyBackupLog(chunk) {
+  const text = chunk.toString();
+  keyBackupJob.log += text;
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(LOG_FILE, text, "utf8");
+  } catch {
+    /* ignore */
+  }
+}
+
+function parseKeyBackupResultFromLog(log) {
+  return parseJsonAfterMarker(log, "__KEY_BACKUP_RESULT__");
+}
+
+function keyBackupJobPayload() {
+  healKeyBackupJobState();
+  let result = keyBackupJob.result;
+  if (!result && !keyBackupJob.running && keyBackupJob.log) {
+    result = parseKeyBackupResultFromLog(keyBackupJob.log);
+  }
+  return {
+    running: keyBackupJob.running,
+    log: keyBackupJob.log,
+    result,
+    error: keyBackupJob.error,
+    startedAt: keyBackupJob.startedAt,
+  };
+}
+
+function startKeyBackup() {
+  const scriptPath = path.join(root, "scripts", "backup-key-repo.mjs");
+  keyBackupJob.running = true;
+  keyBackupJob.log = "";
+  keyBackupJob.result = null;
+  keyBackupJob.error = null;
+  keyBackupJob.startedAt = Date.now();
+
+  try {
+    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+    fs.appendFileSync(
+      LOG_FILE,
+      `[publish-gui] key backup started ${new Date().toISOString()}\n`,
+      "utf8",
+    );
+  } catch {
+    /* ignore */
+  }
+
+  const child = spawn(process.execPath, [scriptPath], {
+    cwd: root,
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  keyBackupJob.child = child;
+
+  child.stdout?.on("data", appendKeyBackupLog);
+  child.stderr?.on("data", appendKeyBackupLog);
+
+  child.on("close", (code) => {
+    keyBackupJob.running = false;
+    keyBackupJob.child = null;
+    if (code === 0) {
+      keyBackupJob.result = parseKeyBackupResultFromLog(keyBackupJob.log);
+      if (!keyBackupJob.result) {
+        keyBackupJob.error = "凭据备份完成但未解析到结果";
+      }
+    } else {
+      keyBackupJob.error =
+        keyBackupJob.log.trim().split("\n").pop() || `进程退出码 ${code}`;
+    }
+  });
+
+  child.on("error", (e) => {
+    keyBackupJob.running = false;
+    keyBackupJob.child = null;
+    keyBackupJob.error = e.message;
+  });
 }
 
 function resetRepoSaveJob() {
@@ -141,9 +277,11 @@ function repoJobPayload() {
 function anyJobRunning() {
   healPublishJobState();
   healRepoSaveJobState();
+  healKeyBackupJobState();
   return (
     (publishJob.running && publishJob.child != null) ||
-    (repoSaveJob.running && repoSaveJob.child != null)
+    (repoSaveJob.running && repoSaveJob.child != null) ||
+    (keyBackupJob.running && keyBackupJob.child != null)
   );
 }
 
@@ -309,15 +447,39 @@ function resetPublishJob() {
   publishJob.startedAt = null;
 }
 
+function signingKeyGuardStatus() {
+  const pubCfg = readJsonSafe(path.join(root, "publish.config.json"));
+  const r = checkSigningKeyConsistent({ config: pubCfg });
+  if (r.ok) {
+    return {
+      ok: true,
+      message: r.rotationAllowed
+        ? "未强制锁定（forbidKeyRotation=false）"
+        : "更新密钥已锁定，与 tauri.conf 一致",
+    };
+  }
+  return { ok: false, message: r.message };
+}
+
+function rejectSigningGuardJson(res) {
+  const g = signingKeyGuardStatus();
+  if (g.ok) return false;
+  sendJson(res, 400, { ok: false, error: g.message });
+  return true;
+}
+
 function projectStatus() {
   healPublishJobState();
   healRepoSaveJobState();
+  healKeyBackupJobState();
   const pkg = readJsonSafe(path.join(root, "package.json"));
   const tauri = readJsonSafe(path.join(root, "src-tauri", "tauri.conf.json"));
   const pubCfg = readJsonSafe(path.join(root, "publish.config.json"));
   const pubExample = readJsonSafe(path.join(root, "publish.config.example.json"));
   const keyExists = fs.existsSync(path.join(root, "keys", "easydone-updater.key"));
   const gh = githubConfigFromPublish(pubCfg, pubExample);
+  const kb = keyBackupConfigFromPublish(pubCfg, pubExample);
+  const keyBackupMeta = readKeyBackupMeta();
   return {
     productName: tauri?.productName || pkg?.name || "easydone",
     currentVersion: pkg?.version || tauri?.version || "0.0.0",
@@ -333,6 +495,13 @@ function projectStatus() {
     repoSaveRunning: repoSaveJob.running,
     repoBranches: gh.branches,
     savesSummary: readRepoSaves(),
+    keyBackupRemote: kb.remote,
+    keyBackupBranch: kb.branch,
+    keyBackupFilesReady: keyBackupFilesReady(),
+    keyBackupRunning: keyBackupJob.running,
+    lastKeyBackupAt: keyBackupMeta?.savedAt ?? null,
+    lastKeyBackupCommit: keyBackupMeta?.commit ?? null,
+    signingKeyGuard: signingKeyGuardStatus(),
   };
 }
 
@@ -508,11 +677,48 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true, reset: true });
   }
 
+  if (url.pathname === "/api/key-backup/job" && req.method === "GET") {
+    return sendJson(res, 200, keyBackupJobPayload());
+  }
+
+  if (url.pathname === "/api/key-backup/reset" && req.method === "POST") {
+    resetKeyBackupJob();
+    return sendJson(res, 200, { ok: true, reset: true });
+  }
+
+  if (url.pathname === "/api/key-backup" && req.method === "POST") {
+    if (anyJobRunning()) {
+      return sendJson(res, 409, {
+        ok: false,
+        error: "已有任务进行中，请等待完成",
+      });
+    }
+    if (!isGitAvailable()) {
+      return sendJson(res, 400, { ok: false, error: "未找到 Git，请安装并加入 PATH" });
+    }
+    if (!keyBackupFilesReady()) {
+      return sendJson(res, 400, {
+        ok: false,
+        error:
+          "缺少备份文件：需存在 keys/easydone-updater.key、publish.config.json、publish.config.example.json",
+      });
+    }
+    try {
+      startKeyBackup();
+      return sendJson(res, 202, { ok: true, started: true });
+    } catch (e) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   if (url.pathname === "/api/repo/save" && req.method === "POST") {
     if (anyJobRunning()) {
       return sendJson(res, 409, {
         ok: false,
-        error: "已有任务进行中（构建/发布或代码存档），请等待完成",
+        error: "已有任务进行中，请等待完成",
       });
     }
     try {
@@ -548,6 +754,7 @@ const server = http.createServer(async (req, res) => {
         error: "已有任务进行中，请等待完成",
       });
     }
+    if (rejectSigningGuardJson(res)) return;
     try {
       const body = await readBody(req);
       const action = body.action || "build-publish";
@@ -572,6 +779,7 @@ const server = http.createServer(async (req, res) => {
         error: "已有任务进行中，请等待完成",
       });
     }
+    if (rejectSigningGuardJson(res)) return;
     try {
       const body = await readBody(req);
       startJob("build-publish", body.version?.trim() || "", body.notes ?? "");

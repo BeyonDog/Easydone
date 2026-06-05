@@ -1,6 +1,11 @@
 import { useCallback, useState } from "react";
 import type { UpdateOffer } from "./lib/appUpdate";
 import { downloadAndInstallUpdate, type DownloadProgress } from "./lib/appUpdate";
+import { formatUpdateInstallError, isUpdaterSignatureKeyMismatch } from "./lib/updateErrors";
+import {
+  MANUAL_INSTALL_DOWNLOAD_URL,
+  UPDATER_KEY_MISMATCH_INTRO,
+} from "./lib/updateErrorText";
 
 type Props = {
   offer: UpdateOffer;
@@ -14,6 +19,7 @@ export function UpdateAvailableModal({ offer, onDismiss }: Props) {
     message: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [signatureKeyMismatch, setSignatureKeyMismatch] = useState(false);
   const busy = progress.phase === "downloading" || progress.phase === "installing";
 
   const notes =
@@ -23,10 +29,14 @@ export function UpdateAvailableModal({ offer, onDismiss }: Props) {
 
   const install = useCallback(async () => {
     setError(null);
+    setSignatureKeyMismatch(false);
     try {
       await downloadAndInstallUpdate(offer, setProgress);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const raw = e instanceof Error ? e.message : String(e);
+      const keyMismatch = isUpdaterSignatureKeyMismatch(raw);
+      const msg = formatUpdateInstallError(raw);
+      setSignatureKeyMismatch(keyMismatch);
       setError(msg);
       setProgress({ phase: "error", percent: 0, message: msg });
     }
@@ -73,7 +83,20 @@ export function UpdateAvailableModal({ offer, onDismiss }: Props) {
               <p className="help">{progress.message}</p>
             </div>
           ) : null}
-          {error ? <div className="error">{error}</div> : null}
+          {error ? (
+            signatureKeyMismatch ? (
+              <div className="error">
+                <p>{UPDATER_KEY_MISMATCH_INTRO}</p>
+                <p>
+                  <a href={MANUAL_INSTALL_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                    下载完整安装包
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="error">{error}</div>
+            )
+          ) : null}
         </div>
       </div>
     </div>

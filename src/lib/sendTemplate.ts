@@ -1,3 +1,4 @@
+import { ADD_MONEY_MAX_GOLD_QTY } from "./addExpMoney.ts";
 import { formatGmtExecErrorMessage } from "./branchEnvDisplay";
 import { gmtEnvSelectionBlockMessage } from "./gmtEnvSelection";
 import { globalMailLimitUserMessage, isGlobalMailLimitError } from "./globalMailLimit.ts";
@@ -82,6 +83,62 @@ export type AdminSendMailResult = {
   itemKindCount: number;
   rowCount?: number;
 };
+
+function validateRewardItemsForPanel(rewardItems: { id: string; cnt: string }[]): string | null {
+  if (rewardItems.length === 0) return "物品列表为空";
+  for (const r of rewardItems) {
+    const id = r.id.trim();
+    if (!id) return "物品 ID 为空";
+    const cntStr = r.cnt.trim();
+    if (!/^\d+$/.test(cntStr)) return `物品 ${id} 数量须为正整数`;
+    const n = Number.parseInt(cntStr, 10);
+    if (!Number.isFinite(n) || n <= 0) return `物品 ${id} 数量须为正整数`;
+    if (n > ADD_MONEY_MAX_GOLD_QTY) return `物品 ${id} 数量超过上限 ${ADD_MONEY_MAX_GOLD_QTY}`;
+  }
+  return null;
+}
+
+/** 加经验加钱面板等：不经 mergeSendTemplateItems 的 9999 数量上限 */
+export async function execAdminSendMailRewardItems(
+  rewardItems: { id: string; cnt: string }[],
+  config: AppConfig,
+  accountId: string,
+  envDisplayLabel?: string,
+): Promise<AdminSendMailResult> {
+  const validationError = validateRewardItemsForPanel(rewardItems);
+  if (validationError) {
+    return { ok: false, message: validationError, itemKindCount: 0 };
+  }
+
+  const envBlock = gmtEnvSelectionBlockMessage(config.gmtEnvName, config.gmtEnvId);
+  if (envBlock) {
+    return { ok: false, message: envBlock, itemKindCount: rewardItems.length };
+  }
+
+  const formatError = (raw: string) =>
+    formatGmtExecErrorMessage(raw, envDisplayLabel, config.gmtEnvId);
+
+  try {
+    const result = await gmtExecAdminSendMail(gmtSessionSliceFromConfig(config), {
+      envName: config.gmtEnvName!,
+      accountId,
+      lockRegion: config.gmtLockRegion,
+      notiRegion: config.gmtNotiRegion,
+      tradable: config.gmtTradable,
+      rewardItems,
+    });
+    if (result.ok) {
+      return {
+        ok: true,
+        message: `已发送 ${rewardItems.length} 种物品`,
+        itemKindCount: rewardItems.length,
+      };
+    }
+    return { ok: false, message: formatError(result.message), itemKindCount: rewardItems.length };
+  } catch (e) {
+    return { ok: false, message: formatError(String(e)), itemKindCount: rewardItems.length };
+  }
+}
 
 export async function execAdminSendMailItems(
   items: SendTemplateItem[],

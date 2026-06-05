@@ -62,6 +62,13 @@ struct SavedTemplate {
     card_color: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct RecycledTemplate {
+    template: SavedTemplate,
+    deleted_at: i64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 struct ItemTableFilter {
@@ -188,6 +195,8 @@ struct AppConfig {
     send_templates: Vec<SavedSendTemplate>,
     #[serde(default)]
     saved_templates: Vec<SavedTemplate>,
+    #[serde(default)]
+    recycled_templates: Vec<RecycledTemplate>,
     #[serde(default = "default_sidebar_item_card_color")]
     sidebar_item_card_color: String,
     #[serde(default = "default_sidebar_task_card_color")]
@@ -249,6 +258,12 @@ struct AppConfig {
     item_server_wide_send_settings: Option<ItemServerWideSendSettings>,
     #[serde(default)]
     global_send_last_form: Option<GlobalSendLastForm>,
+    #[serde(default = "default_excel_auto_refresh_interval_sec")]
+    excel_auto_refresh_interval_sec: u64,
+}
+
+fn default_excel_auto_refresh_interval_sec() -> u64 {
+    1800
 }
 
 fn default_gtop_base_url() -> String {
@@ -294,6 +309,7 @@ impl Default for AppConfig {
             saved_snapshots: Vec::new(),
             send_templates: Vec::new(),
             saved_templates: Vec::new(),
+            recycled_templates: Vec::new(),
             sidebar_item_card_color: default_sidebar_item_card_color(),
             sidebar_task_card_color: default_sidebar_task_card_color(),
             sidebar_add_exp_card_color: default_sidebar_add_exp_card_color(),
@@ -324,6 +340,7 @@ impl Default for AppConfig {
             gtop_region_server_name: None,
             item_server_wide_send_settings: Some(ItemServerWideSendSettings::default()),
             global_send_last_form: None,
+            excel_auto_refresh_interval_sec: default_excel_auto_refresh_interval_sec(),
         }
     }
 }
@@ -433,6 +450,41 @@ fn read_file_base64(path: String) -> Result<String, String> {
     Ok(STANDARD.encode(&bytes))
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExcelWorkspaceMtimeFingerprint {
+    item: u64,
+    mission: u64,
+    account: u64,
+}
+
+fn file_mtime_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn excel_workspace_path(root: &str, parts: &[&str]) -> PathBuf {
+    let mut p = PathBuf::from(root);
+    for part in parts {
+        p.push(part);
+    }
+    p
+}
+
+#[tauri::command]
+fn excel_workspace_mtime_fingerprint(root: String) -> Result<ExcelWorkspaceMtimeFingerprint, String> {
+    let root = root.trim();
+    Ok(ExcelWorkspaceMtimeFingerprint {
+        item: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Item.xlsx"])),
+        mission: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Mission.xlsx"])),
+        account: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Account.xlsx"])),
+    })
+}
+
 #[tauri::command]
 fn write_file_base64(path: String, data_base64: String) -> Result<(), String> {
     let bytes = STANDARD
@@ -497,8 +549,26 @@ fn theme_wallpaper_absolute_path(
     Ok(Some(full_canon.to_string_lossy().to_string()))
 }
 
+fn prevent_default_shortcuts() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::Flags;
+
+    #[cfg(debug_assertions)]
+    {
+        tauri_plugin_prevent_default::Builder::new()
+            .with_flags(Flags::all().difference(Flags::FIND | Flags::RELOAD | Flags::DEV_TOOLS))
+            .build()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        tauri_plugin_prevent_default::Builder::new()
+            .with_flags(Flags::all().difference(Flags::FIND))
+            .build()
+    }
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(prevent_default_shortcuts())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -527,6 +597,7 @@ fn main() {
             save_item_table_filter,
             save_task_table_filter,
             read_file_base64,
+            excel_workspace_mtime_fingerprint,
             write_file_base64,
             save_theme_wallpaper,
             clear_theme_wallpaper,

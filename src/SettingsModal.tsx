@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppConfig } from "./types.ts";
 import { ServerWideSendSettingsTab } from "./ServerWideSendSettingsTab.tsx";
+import { TemplateRecycleBinTab } from "./TemplateRecycleBinTab.tsx";
 import { GtopSettingsSection } from "./GtopSettingsSection.tsx";
 import { SettingsUpdateSection } from "./SettingsUpdateSection.tsx";
 import { SidebarColorSettings } from "./SidebarColorSettings.tsx";
@@ -29,6 +30,10 @@ import {
 } from "./lib/sidebarCardColor.ts";
 import { normalizeItemServerWideSendSettings } from "./lib/itemServerWideSendSettings.ts";
 import { excelItemPath, excelMissionPath } from "./lib/paths.ts";
+import {
+  DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
+  normalizeExcelAutoRefreshIntervalSec,
+} from "./lib/excelWorkspaceFingerprint.ts";
 
 const MAX_WALLPAPER_BASE64_CHARS = 14_000_000;
 
@@ -52,6 +57,7 @@ export type SettingsModalProps = {
   appUpdaterCurrentVersion: string;
   appUpdaterManifestUrl: string;
   onAppUpdaterCheck: () => void;
+  onPurgeRecycledTemplate: (id: string) => void | Promise<void>;
 };
 
 export function SettingsModal({
@@ -69,8 +75,9 @@ export function SettingsModal({
   appUpdaterCurrentVersion,
   appUpdaterManifestUrl,
   onAppUpdaterCheck,
+  onPurgeRecycledTemplate,
 }: SettingsModalProps) {
-  const [settingsTab, setSettingsTab] = useState<"general" | "serverWide" | "gtop">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "serverWide" | "gtop" | "recycle">("general");
   const [ex, setEx] = useState(config.excelWorkspaceRoot ?? "");
   const [themeHex, setThemeHex] = useState(config.themeAccentHex ?? DEFAULT_THEME_ACCENT_HEX);
   const [themeBgHex, setThemeBgHex] = useState(config.themeBackgroundHex ?? DEFAULT_THEME_BACKGROUND_HEX);
@@ -86,6 +93,7 @@ export function SettingsModal({
   const [serverWideDraft, setServerWideDraft] = useState(() =>
     normalizeItemServerWideSendSettings(config.itemServerWideSendSettings),
   );
+  const [autoRefreshSec, setAutoRefreshSec] = useState(String(DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC));
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,6 +107,7 @@ export function SettingsModal({
     setWallPending(null);
     setSidebarItemHex(sidebarItemDefaultColor(config));
     setSidebarTaskHex(sidebarTaskDefaultColor(config));
+    setAutoRefreshSec(String(normalizeExcelAutoRefreshIntervalSec(config.excelAutoRefreshIntervalSec)));
   }, [settingsOpen, config]);
 
   useEffect(() => {
@@ -200,6 +209,7 @@ export function SettingsModal({
       sidebarItemCardColor: normalizeSidebarCardColor(sidebarItemHex, DEFAULT_SIDEBAR_ITEM_CARD_COLOR),
       sidebarTaskCardColor: normalizeSidebarCardColor(sidebarTaskHex, DEFAULT_SIDEBAR_TASK_CARD_COLOR),
       itemServerWideSendSettings: normalizeItemServerWideSendSettings(serverWideDraft),
+      excelAutoRefreshIntervalSec: normalizeExcelAutoRefreshIntervalSec(autoRefreshSec),
     };
     await onPersist(next);
     onClose();
@@ -262,12 +272,21 @@ export function SettingsModal({
           >
             GTOP 接取任务
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={settingsTab === "recycle"}
+            className={`btn${settingsTab === "recycle" ? " active" : ""}`}
+            onClick={() => setSettingsTab("recycle")}
+          >
+            回收站
+          </button>
         </div>
         <div className="btn-row modal-actions-top">
           <button type="button" className="btn" onClick={closeSettings}>
             取消
           </button>
-          {settingsTab === "gtop" ? (
+          {settingsTab === "gtop" || settingsTab === "recycle" ? (
             <button type="button" className="btn primary" onClick={onClose}>
               关闭
             </button>
@@ -290,6 +309,13 @@ export function SettingsModal({
               onCompleteGtopLogin={onCompleteGtopLogin}
             />
           ) : null}
+          {settingsTab === "recycle" ? (
+            <TemplateRecycleBinTab
+              config={config}
+              recycledTemplates={config.recycledTemplates ?? []}
+              onPurge={onPurgeRecycledTemplate}
+            />
+          ) : null}
           {settingsTab === "general" ? (
             <>
               <div className="field">
@@ -300,6 +326,21 @@ export function SettingsModal({
                     选择文件夹
                   </button>
                 </div>
+              </div>
+              <div className="field">
+                <label htmlFor="settings-excel-auto-refresh">Excel 后台同步间隔（秒）</label>
+                <input
+                  id="settings-excel-auto-refresh"
+                  type="number"
+                  min={0}
+                  step={60}
+                  className="bookmark"
+                  value={autoRefreshSec}
+                  onChange={(e) => setAutoRefreshSec(e.target.value)}
+                />
+                <p className="help" style={{ marginTop: "0.35rem" }}>
+                  0 表示关闭；默认 {DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC}（30 分钟）。文件未变更时不重新读盘，主表不闪屏。
+                </p>
               </div>
               <div className="field">
                 <label htmlFor="settings-theme-accent">主题强调色</label>

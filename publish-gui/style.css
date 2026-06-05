@@ -291,6 +291,15 @@ button.btn-tiny {
   width: 100%;
 }
 
+.key-backup-warn strong {
+  color: var(--error, #e06c75);
+}
+
+.card--key-backup .key-backup-warn {
+  border-left: 3px solid var(--error, #e06c75);
+  padding-left: 0.65rem;
+}
+
 .repo-git-hint.err {
   color: var(--error);
 }

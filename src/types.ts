@@ -88,6 +88,11 @@ export interface SavedTemplate {
   cardColor?: string | null;
 }
 
+export interface RecycledTemplate {
+  template: SavedTemplate;
+  deletedAt: number;
+}
+
 /** 设置在「设置 › 全服发送 › 高级」中持久化的 AdminSendGlobalMail 附加字段 */
 export interface ItemServerWideSendAdvancedSettings {
   globalMailType: string;
@@ -124,11 +129,12 @@ export interface AppConfig {
   /** @deprecated 迁移后为空 */
   sendTemplates: SavedSendTemplate[];
   savedTemplates: SavedTemplate[];
+  recycledTemplates?: RecycledTemplate[];
   /** 侧栏默认道具卡片色（全部道具 + 未单独设色的道具模板） */
   sidebarItemCardColor?: string | null;
   /** 侧栏默认任务卡片色 */
   sidebarTaskCardColor?: string | null;
-  /** 侧栏「加经验」固定卡片色 */
+  /** 侧栏「加经验加钱」固定卡片色 */
   sidebarAddExpCardColor?: string | null;
   /** 全部道具卡片单独覆盖色；null 表示跟随 sidebarItemCardColor */
   sidebarItemCardColorOverride?: string | null;
@@ -159,6 +165,8 @@ export interface AppConfig {
   gtopRegionServerName: string | null;
   itemServerWideSendSettings?: ItemServerWideSendSettings | null;
   globalSendLastForm?: GlobalSendLastForm | null;
+  /** 后台静默同步 Excel 间隔（秒）；0 为关闭，默认 1800（30 分钟） */
+  excelAutoRefreshIntervalSec?: number | null;
 }
 
 export type ActiveView =

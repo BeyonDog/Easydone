@@ -48,6 +48,10 @@
   --table-meta-row-height: 2rem;
   --filter-chip-bar-height: 0px;
   --filter-sheet-width: min(28rem, calc(100vw - var(--sidebar-width) - 1rem));
+  --app-scrollbar-size: 8px;
+  --app-scrollbar-track: color-mix(in srgb, var(--app-border) 40%, transparent);
+  --app-scrollbar-thumb: color-mix(in srgb, var(--app-text-muted) 55%, var(--app-border));
+  --app-scrollbar-thumb-hover: color-mix(in srgb, var(--app-accent) 45%, var(--app-text-muted));
   color: var(--app-text);
 }
 
@@ -76,6 +80,33 @@ body::before {
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--app-scrollbar-track);
 }
 
 body {
@@ -290,12 +321,28 @@ button {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
+  min-height: 0;
+  overflow: hidden;
   background: var(--app-sidebar-bg);
   border-right: 1px solid var(--app-sidebar-border);
   padding: 0.5rem;
   display: flex;
   flex-direction: column;
+  gap: 0;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
+}
+
+.sidebar-scroll--dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .sidebar.sidebar--filter-blocked {
@@ -369,6 +416,116 @@ button {
   position: relative;
   padding-top: 1.85rem;
   padding-left: calc(0.5rem - 1px + 1.1rem);
+}
+
+.sidebar-card-delete-badge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  width: 0.75rem;
+  height: 0.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transform: translate(-35%, -35%);
+}
+
+.sidebar-card-delete-badge-glyph {
+  display: grid;
+  place-items: center;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: #c62828;
+  color: #fff;
+  font-size: 0.58rem;
+  line-height: 1;
+  font-weight: 700;
+  user-select: none;
+}
+
+.sidebar-card-delete-badge:hover .sidebar-card-delete-badge-glyph {
+  background: #b71c1c;
+}
+
+.card--sidebar-add-exp.card--sidebar-with-actions {
+  padding-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.card--sidebar-add-exp .card-template-actions--add-exp {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.template-recycle-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.card--recycle-thumb {
+  cursor: default;
+  font-size: 0.72rem;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.card--recycle-thumb:hover {
+  border-color: var(--app-border);
+  border-left-color: var(--sidebar-card-accent);
+  background: var(--app-card-bg);
+}
+
+.card--recycle-thumb.card--sidebar-template {
+  padding-top: 0.3rem;
+  padding-left: calc(0.3rem - 1px + 0.35rem);
+}
+
+.recycle-thumb-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+}
+
+.card--recycle-thumb .card-title {
+  font-size: 0.78rem;
+}
+
+.recycle-thumb-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+}
+
+.recycle-thumb-meta .card-sub {
+  margin-top: 0;
+  font-size: 0.62rem;
+}
+
+.recycle-thumb-purge {
+  align-self: stretch;
+  flex-shrink: 0;
+  min-width: 3.2rem;
+  max-width: 3.6rem;
+  margin: 0;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .sidebar-card-drag-row {
@@ -2298,11 +2455,116 @@ textarea.bookmark {
 }
 
 .main .add-exp-panel {
-  max-width: 34rem;
+  max-width: min(72rem, 100%);
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
   padding: 0.25rem 0.15rem 1.5rem;
+}
+
+.add-exp-money-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem 1.5rem;
+  align-items: stretch;
+}
+
+@media (max-width: 52rem) {
+  .add-exp-money-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.add-exp-money-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-width: 0;
+  min-height: 16rem;
+  height: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-input-bg) 35%, transparent);
+}
+
+.add-exp-money-col--stretch .btn-row,
+.add-exp-money-col--stretch .add-exp-col-footer {
+  margin-top: auto;
+}
+
+.add-exp-col-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.topbar-excel-sync-hint {
+  font-size: 0.85rem;
+  margin-right: 0.25rem;
+}
+
+.add-exp-col-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.add-exp-money-hint,
+.add-exp-money-preset-hint,
+.add-exp-level-preset-hint {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.add-exp-gold-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.add-exp-gold-input {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  max-width: 14rem;
+}
+
+.add-exp-wan-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.add-exp-gold-preview {
+  margin: 0.25rem 0 0;
+}
+
+.add-exp-preset-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.add-exp-preset-bar .btn {
+  flex: 1 1 auto;
+  min-width: 7.5rem;
+}
+
+.add-exp-preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.add-exp-preset-row .btn {
+  flex: 1 1 auto;
+  min-width: 7.5rem;
 }
 
 .add-exp-panel-title {

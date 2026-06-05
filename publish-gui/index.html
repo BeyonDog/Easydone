@@ -66,6 +66,24 @@
         </div>
         <div id="repo-log" class="log-view" hidden></div>
       </section>
+
+      <section class="card card--key-backup">
+        <h2>发版凭据备份（easydoneKey）</h2>
+        <p class="hint key-backup-warn">
+          将签名私钥 <code>easydone-updater.key</code> 与 <code>publish.config.json</code>、<code>publish.config.example.json</code> 推送到
+          <a href="https://github.com/BeyonDog/easydoneKey" target="_blank" rel="noopener">BeyonDog/easydoneKey</a>。
+          <strong>该仓库为 Public 时，任何人可下载并伪造签名更新包</strong>，仅建议在可接受风险时使用；长期请改为 Private。
+        </p>
+        <p class="hint" id="key-backup-meta">上次备份：—</p>
+        <div class="btn-row actions">
+          <button type="button" id="btn-key-backup" class="btn-secondary">备份到 GitHub</button>
+        </div>
+        <div class="job-toolbar">
+          <div id="key-backup-job-status" class="job-status" hidden></div>
+          <button type="button" id="btn-reset-key-backup" class="btn-secondary btn-tiny">重置备份任务</button>
+        </div>
+        <div id="key-backup-log" class="log-view" hidden></div>
+      </section>
     </main>
     <script type="module" src="/app.js"></script>
   </body>

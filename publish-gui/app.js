@@ -1,11 +1,13 @@
 const $ = (id) => document.getElementById(id);
 
-const BTN_IDS = ["btn-build", "btn-publish-only", "btn-build-publish"];
+const BTN_IDS = ["btn-build", "btn-publish-only", "btn-build-publish", "btn-key-backup"];
 
 let repoBranches = ["main", "second", "third"];
 let repoPollTimer = null;
 let repoJobFinishedLocally = false;
 let activeRepoBranch = null;
+let keyBackupPollTimer = null;
+let keyBackupJobFinishedLocally = false;
 
 function formatBytes(bytes) {
   if (!bytes || bytes <= 0) return "—";
@@ -99,6 +101,40 @@ function renderSaveSlots(savesData) {
       if (branch) void startRepoSave(branch);
     });
   });
+}
+
+function updateKeyBackupMeta(data) {
+  const el = $("key-backup-meta");
+  if (!el) return;
+  const remote = data.keyBackupRemote || "https://github.com/BeyonDog/easydoneKey.git";
+  const branch = data.keyBackupBranch || "main";
+  const last = data.lastKeyBackupAt ? formatSavedAt(data.lastKeyBackupAt) : "从未备份";
+  const commit = data.lastKeyBackupCommit ? `，提交 ${data.lastKeyBackupCommit}` : "";
+  const filesOk = data.keyBackupFilesReady !== false;
+  el.textContent = `目标：${remote}（分支 ${branch}）。上次备份：${last}${commit}。本地三件套：${filesOk ? "齐全" : "缺少文件"}`;
+  if (!filesOk) el.classList.add("err");
+  else el.classList.remove("err");
+}
+
+function setKeyBackupJobStatus(text, tone = "") {
+  const el = $("key-backup-job-status");
+  if (!el) return;
+  if (!text) {
+    el.hidden = true;
+    el.textContent = "";
+    el.className = "job-status";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = text;
+  el.className = `job-status${tone ? ` ${tone}` : ""}`;
+}
+
+function stopKeyBackupPolling() {
+  if (keyBackupPollTimer) {
+    clearInterval(keyBackupPollTimer);
+    keyBackupPollTimer = null;
+  }
 }
 
 function updateRepoGitHint(data) {
@@ -217,7 +253,15 @@ function applyConfigFromStatus(data) {
   }
   if (!data.hasSigningKey) {
     hint.textContent =
-      "未找到 keys/easydone-updater.key，请先运行: npm run tauri signer generate -- --ci -w keys/easydone-updater.key";
+      "未找到 keys/easydone-updater.key，仅首次请运行: npm run signing:init（禁止覆盖已有密钥）";
+    hint.style.color = "#e5484d";
+    setButtonsDisabled(true);
+    setResetButtonEnabled(false);
+    return false;
+  }
+  const guard = data.signingKeyGuard;
+  if (guard && !guard.ok) {
+    hint.textContent = guard.message || "更新密钥校验失败（禁止换钥）";
     hint.style.color = "#e5484d";
     setButtonsDisabled(true);
     setResetButtonEnabled(false);
@@ -236,10 +280,19 @@ function applyConfigFromStatus(data) {
     );
     hint.style.color = "#f5d90a";
   }
+  if (guard?.ok && !guard.message?.includes("未强制锁定")) {
+    lines.push("更新密钥已锁定，与 tauri.conf 一致（永不换钥）。");
+    if (hint.style.color !== "#f5d90a") hint.style.color = "#3dd68c";
+  }
   hint.textContent = lines.join("\n");
-  if (data.repoSaveRunning) {
+  if (data.repoSaveRunning || data.keyBackupRunning) {
     setButtonsDisabled(true);
     setSaveSlotButtonsDisabled(true);
+  }
+  updateKeyBackupMeta(data);
+  const kbBtn = $("btn-key-backup");
+  if (kbBtn && !data.publishRunning && !data.repoSaveRunning && !data.keyBackupRunning) {
+    kbBtn.disabled = !data.gitAvailable || !data.keyBackupFilesReady;
   }
   return true;
 }
@@ -277,12 +330,17 @@ async function syncJobUi() {
   const savesData = savesRes.ok ? await savesRes.json() : data.savesSummary ?? { slots: {} };
   renderSaveSlots(savesData);
   updateRepoGitHint(data);
+  updateKeyBackupMeta(data);
   const configOk = applyConfigFromStatus(data);
   if (!configOk) return;
 
   if (data.repoSaveRunning && !repoPollTimer) {
     void syncRepoJobUi();
-  } else if (!data.repoSaveRunning && !data.publishRunning) {
+  }
+  if (data.keyBackupRunning && !keyBackupPollTimer) {
+    void syncKeyBackupJobUi();
+  }
+  if (!data.repoSaveRunning && !data.publishRunning && !data.keyBackupRunning) {
     setButtonsDisabled(false);
     setSaveSlotButtonsDisabled(false);
   } else if (data.publishRunning) {
@@ -732,5 +790,130 @@ async function startRepoSave(branch) {
 }
 
 $("btn-reset-repo-job")?.addEventListener("click", () => void resetRepoJobState());
+
+function showKeyBackupSuccess(job, logEl) {
+  const r = job.result;
+  keyBackupJobFinishedLocally = true;
+  stopKeyBackupPolling();
+  setKeyBackupJobStatus("备份成功", "ok");
+  logEl.classList.remove("error");
+  logEl.innerHTML = [
+    `<span class="log-line log-line-ok">已推送到 easydoneKey</span>`,
+    `<span class="log-line">时间: ${escapeHtml(formatSavedAt(r.savedAt))}</span>`,
+    r.commit ? `<span class="log-line">提交: ${escapeHtml(r.commit)}</span>` : "",
+    r.remoteUrl ? `<span class="log-line">远程: ${escapeHtml(r.remoteUrl)}</span>` : "",
+    r.branch ? `<span class="log-line">分支: ${escapeHtml(r.branch)}</span>` : "",
+    `<span class="log-line log-line-info">--- 日志（末尾）---</span>`,
+    renderColoredLog(job.log.slice(-5000)),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  setButtonsDisabled(false);
+  setSaveSlotButtonsDisabled(false);
+  void loadStatus();
+}
+
+function showKeyBackupFailure(job, logEl) {
+  keyBackupJobFinishedLocally = true;
+  stopKeyBackupPolling();
+  setKeyBackupJobStatus("备份失败", "err");
+  logEl.classList.add("error");
+  logEl.innerHTML = [
+    `<span class="log-line log-line-err">${escapeHtml(job.error || "备份失败")}</span>`,
+    renderColoredLog(job.log.slice(-6000)),
+  ].join("\n");
+  setButtonsDisabled(false);
+  setSaveSlotButtonsDisabled(false);
+}
+
+async function syncKeyBackupJobUi() {
+  try {
+    const [statusRes, jobRes] = await Promise.all([fetch("/api/status"), fetch("/api/key-backup/job")]);
+    if (!statusRes.ok || !jobRes.ok) return;
+    const status = await statusRes.json();
+    const job = await jobRes.json();
+    const log = $("key-backup-log");
+    updateKeyBackupMeta(status);
+    if (!log) return;
+
+    if (job.running) {
+      keyBackupJobFinishedLocally = false;
+      setButtonsDisabled(true);
+      setSaveSlotButtonsDisabled(true);
+      log.hidden = false;
+      setKeyBackupJobStatus("正在备份凭据到 GitHub…", "running");
+      renderJobLog(job, log);
+      if (!keyBackupPollTimer) {
+        keyBackupPollTimer = setInterval(() => void syncKeyBackupJobUi(), 2000);
+      }
+      return;
+    }
+
+    stopKeyBackupPolling();
+    if (!job.log && !job.error && !job.result) return;
+
+    log.hidden = false;
+    if (job.result?.kind === "key-backup") {
+      showKeyBackupSuccess(job, log);
+    } else if (job.error) {
+      showKeyBackupFailure(job, log);
+    } else {
+      const parsed = parseJsonAfterMarker(job.log, "__KEY_BACKUP_RESULT__");
+      if (parsed) showKeyBackupSuccess({ ...job, result: parsed }, log);
+      else if (job.error) showKeyBackupFailure(job, log);
+      else renderJobLog(job, log);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+async function resetKeyBackupJobState() {
+  stopKeyBackupPolling();
+  try {
+    await fetch("/api/key-backup/reset", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  keyBackupJobFinishedLocally = false;
+  await loadStatus();
+}
+
+async function startKeyBackup() {
+  const log = $("key-backup-log");
+  keyBackupJobFinishedLocally = false;
+  stopKeyBackupPolling();
+  setButtonsDisabled(true);
+  setSaveSlotButtonsDisabled(true);
+  if (log) {
+    log.hidden = false;
+    log.classList.remove("error");
+    log.innerHTML = `<span class="log-line log-line-info">正在启动凭据备份…</span>`;
+  }
+  setKeyBackupJobStatus("正在备份…", "running");
+
+  try {
+    const res = await fetch("/api/key-backup", { method: "POST" });
+    const data = await res.json();
+    if (res.status === 409) {
+      throw new Error(data.error || "已有任务进行中");
+    }
+    if (!data.ok) throw new Error(data.error || "启动失败");
+    keyBackupPollTimer = setInterval(() => void syncKeyBackupJobUi(), 2000);
+    void syncKeyBackupJobUi();
+  } catch (e) {
+    keyBackupJobFinishedLocally = true;
+    setKeyBackupJobStatus("启动失败", "err");
+    if (log) {
+      log.classList.add("error");
+      log.innerHTML = `<span class="log-line log-line-err">${escapeHtml(e instanceof Error ? e.message : String(e))}</span>`;
+    }
+    setButtonsDisabled(false);
+    setSaveSlotButtonsDisabled(false);
+  }
+}
+
+$("btn-key-backup")?.addEventListener("click", () => void startKeyBackup());
+$("btn-reset-key-backup")?.addEventListener("click", () => void resetKeyBackupJobState());
 
 void loadStatus();

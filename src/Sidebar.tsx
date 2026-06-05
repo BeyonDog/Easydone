@@ -10,6 +10,8 @@ import {
   sidebarItemDefaultColor,
   sidebarTaskDefaultColor,
 } from "./lib/sidebarCardColor.ts";
+import { formatSidebarCardCreatedAt } from "./lib/formatSidebarCardCreatedAt.ts";
+import { usePointerDragScroll } from "./hooks/usePointerDragScroll.ts";
 
 export type SidebarProps = {
   config: AppConfig;
@@ -32,6 +34,10 @@ export type SidebarProps = {
   serverWideSendEnabled?: boolean;
   onSelectAddExp: () => void;
   addExpAccent: string;
+  addExpPresetBusy?: boolean;
+  onAddExpPresetMaxLevel?: () => void;
+  onAddExpPresetRich?: () => void;
+  onAddExpPresetRichAndMaxLevel?: () => void;
   onCloseMenus: () => void;
 };
 
@@ -183,6 +189,10 @@ export function Sidebar({
   serverWideSendEnabled = false,
   onSelectAddExp,
   addExpAccent,
+  addExpPresetBusy = false,
+  onAddExpPresetMaxLevel,
+  onAddExpPresetRich,
+  onAddExpPresetRichAndMaxLevel,
   onCloseMenus,
 }: SidebarProps) {
   const [menu, setMenu] = useState<SidebarMenu | null>(null);
@@ -190,6 +200,7 @@ export function Sidebar({
   const [colorAnchor, setColorAnchor] = useState<{ x: number; y: number } | null>(null);
 
   const templates = mergeSidebarTemplateOrder(config.savedTemplates, config.sidebarTemplateOrder);
+  const dragScroll = usePointerDragScroll({ enabled: !filterSheetOpen });
   const itemAccent = resolvePinnedItemCardColor(config);
   const taskAccent = resolvePinnedTaskCardColor(config);
 
@@ -259,6 +270,7 @@ export function Sidebar({
       <div
         className={`card card--sidebar card--sidebar-template card--template${withSidebarActions ? " card--sidebar-with-actions" : ""}${hasItemActions ? " card--sidebar-item-template" : ""}${hasTaskActions ? " card--sidebar-task-template" : ""}${isActive ? " active" : ""}`}
         style={sidebarCardAccentStyleObj(accent)}
+        title={formatSidebarCardCreatedAt(t.createdAt)}
         onClick={() => {
           if (filterSheetOpen) return;
           onSelectTemplate(t.id);
@@ -268,6 +280,20 @@ export function Sidebar({
           setMenu({ type: "template", x: e.clientX, y: e.clientY, id: t.id, title: t.title });
         }}
       >
+        <button
+          type="button"
+          className="sidebar-card-delete-badge"
+          aria-label={`删除模板 ${t.title}`}
+          title="移入回收站"
+          onClick={(e) => {
+            e.stopPropagation();
+            onTemplateDelete(t.id, t.title);
+          }}
+        >
+          <span className="sidebar-card-delete-badge-glyph" aria-hidden>
+            −
+          </span>
+        </button>
         <div className="sidebar-card-drag-row">{dragHandle}</div>
         {hasItemActions ? (
           <>
@@ -365,6 +391,12 @@ export function Sidebar({
       aria-hidden={filterSheetOpen ? true : undefined}
     >
       <div
+        ref={dragScroll.ref}
+        className={`sidebar-scroll${dragScroll.dragging ? " sidebar-scroll--dragging" : ""}`}
+        onPointerDown={dragScroll.handlers.onPointerDown}
+        onClickCapture={dragScroll.onClickCapture}
+      >
+      <div
         className={`card card--sidebar card--sidebar-pinned${activeView.kind === "item" ? " active" : ""}`}
         style={sidebarCardAccentStyleObj(itemAccent)}
         onClick={() => {
@@ -412,14 +444,43 @@ export function Sidebar({
         )}
       </div>
       <div
-        className={`card card--sidebar card--sidebar-pinned${activeView.kind === "addExp" ? " active" : ""}`}
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-add-exp card--sidebar-with-actions${activeView.kind === "addExp" ? " active" : ""}`}
         style={sidebarCardAccentStyleObj(addExpAccent)}
         onClick={() => {
           if (filterSheetOpen) return;
           onSelectAddExp();
         }}
       >
-        <div className="card-title">加经验</div>
+        <div
+          className="card-template-actions card-template-actions--grid card-template-actions--add-exp"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="btn btn-tiny card-template-action"
+            disabled={filterSheetOpen || addExpPresetBusy}
+            onClick={() => onAddExpPresetMaxLevel?.()}
+          >
+            一键满级
+          </button>
+          <button
+            type="button"
+            className="btn btn-tiny card-template-action"
+            disabled={filterSheetOpen || addExpPresetBusy}
+            onClick={() => onAddExpPresetRich?.()}
+          >
+            一键富翁
+          </button>
+          <button
+            type="button"
+            className="btn btn-tiny card-template-action"
+            disabled={filterSheetOpen || addExpPresetBusy}
+            onClick={() => onAddExpPresetRichAndMaxLevel?.()}
+          >
+            一键富翁满级
+          </button>
+        </div>
+        <div className="card-title">加经验加钱</div>
       </div>
 
       <TemplateDnDList
@@ -432,6 +493,7 @@ export function Sidebar({
         }}
         renderCard={renderTemplateCard}
       />
+      </div>
 
       {menu?.type === "pinned" ? (
         <div
@@ -514,7 +576,7 @@ export function Sidebar({
               onTemplateDelete(id, title);
             }}
           >
-            删除
+            移入回收站
           </button>
         </div>
       ) : null}

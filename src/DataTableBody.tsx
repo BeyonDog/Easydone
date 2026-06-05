@@ -47,7 +47,7 @@ const DataTableRow = memo(function DataTableRow({
   onBumpItemLineQty,
 }: DataTableRowProps) {
   return (
-    <tr>
+    <tr data-data-idx={dataIdx}>
       <td className="row-check">
         <div className="row-check-inner">
           <input type="checkbox" checked={isSelected} onChange={() => onToggleRow(dataIdx)} />

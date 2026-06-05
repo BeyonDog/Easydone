@@ -553,7 +553,7 @@ export function QualityChipRow({
             <FilterChip
               label={key}
               selected={selectedKeys.includes(key)}
-              onClick={() => onToggle(key)}
+              onClick={onReorder ? () => {} : () => onToggle(key)}
               qualityDot={qualityDotColor(key)}
               showClose={Boolean(onDemoteKey)}
               onClose={() => onDemoteKey?.(key)}

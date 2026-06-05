@@ -2,10 +2,17 @@ import { updateManifestUrl } from "./updateManifest";
 import {
   UPDATE_UP_TO_DATE_MESSAGE,
   formatUpdateCheckErrorWithUrlPart,
+  formatUpdateInstallError,
   isManifestNotFound,
+  isUpdaterSignatureKeyMismatch,
 } from "./updateErrorText";
 
-export { UPDATE_UP_TO_DATE_MESSAGE, isManifestNotFound };
+export {
+  UPDATE_UP_TO_DATE_MESSAGE,
+  formatUpdateInstallError,
+  isManifestNotFound,
+  isUpdaterSignatureKeyMismatch,
+};
 
 /** Map Rust/JS preflight errors to user-facing Chinese. */
 export function formatUpdateCheckError(raw: string): string {

@@ -11,4 +11,5 @@ publish.config.json
 .env.local
 Update/*
 !Update/.gitkeep
+.key-backup-worktree/
 # ReleaseArtifacts/  intentionally tracked (per-branch NSIS snapshots for GitHub saves)

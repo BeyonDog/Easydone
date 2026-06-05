@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { AddExpPanel } from "./AddExpPanel";
+import { useClampedMenuPosition } from "./hooks/useClampedMenuPosition.ts";
 import { GlobalSendMailModal } from "./GlobalSendMailModal.tsx";
 import { ColumnPickModal } from "./ColumnPickModal";
 import { DataTableBody, TABLE_ROW_HEIGHT_ESTIMATE } from "./DataTableBody";
@@ -21,7 +22,24 @@ import type {
 } from "./types";
 import type { GlobalSendSubmitPayload } from "./GlobalSendMailModal.tsx";
 import { excelAccountPath, excelItemPath, excelMissionPath } from "./lib/paths";
+import {
+  DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
+  fingerprintsEqual,
+  normalizeExcelAutoRefreshIntervalSec,
+  type ExcelWorkspaceMtimeFingerprint,
+} from "./lib/excelWorkspaceFingerprint.ts";
+import { isStaleExcelLoadSeq, shouldSkipSilentExcelLoad } from "./lib/excelLoadSchedule.ts";
+import {
+  isCtrlOrCmdF,
+  shouldOpenAppFilterModal,
+  shouldPreventNativeFind,
+  shouldRefocusFilterQuickSearch,
+} from "./lib/ctrlFFilterShortcut.ts";
 import { parseAccountLevelSheet } from "./lib/accountLevelExp";
+import {
+  parseTableRowIdForCopy,
+  resolveTableContextDataIdx,
+} from "./lib/tableRowId.ts";
 import type { ReactNode } from "react";
 import {
   cellStr,
@@ -141,6 +159,12 @@ import {
   gtopSessionSliceFromConfig,
 } from "./lib/gtopClient";
 import { SettingsModal } from "./SettingsModal.tsx";
+import {
+  runAddExpPresetMaxLevel,
+  runAddExpPresetRich,
+  runAddExpPresetRichAndMaxLevel,
+  type AddExpPresetRunnerDeps,
+} from "./lib/addExpPresetRunner.ts";
 
 const MAX_TEMPLATES = 50;
 
@@ -821,6 +845,7 @@ const defaultConfig = (): AppConfig => ({
   savedSnapshots: [],
   sendTemplates: [],
   savedTemplates: [],
+  recycledTemplates: [],
   themeAccentHex: DEFAULT_THEME_ACCENT_HEX,
   themeBackgroundHex: DEFAULT_THEME_BACKGROUND_HEX,
   themeWallpaperRelativePath: null,
@@ -848,6 +873,7 @@ const defaultConfig = (): AppConfig => ({
   gtopEnvName: null,
   gtopRegionServerId: null,
   gtopRegionServerName: null,
+  excelAutoRefreshIntervalSec: DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
 });
 
 function useToasts() {
@@ -894,7 +920,7 @@ export default function App() {
     item: [],
     task: [],
   });
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; dataIdx: number | null } | null>(null);
   const [hiddenPanel, setHiddenPanel] = useState<"item" | "task" | null>(null);
   const [hiddenPanelDraft, setHiddenPanelDraft] = useState<string[] | null>(null);
 
@@ -908,6 +934,7 @@ export default function App() {
   const [templateNameDraft, setTemplateNameDraft] = useState("");
   const [templateRenameModal, setTemplateRenameModal] = useState<{ id: string; draft: string } | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<{ id: string; title: string } | null>(null);
+  const [addExpPresetBusy, setAddExpPresetBusy] = useState(false);
   const [sendTemplateModal, setSendTemplateModal] = useState<{
     templateId: string;
     title: string;
@@ -924,6 +951,8 @@ export default function App() {
   const gmtBrowserOpenedThisSessionRef = useRef(false);
   const tableDataRef = useRef<HTMLTableElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const ctxMenuRef = useRef<HTMLDivElement>(null);
+  const columnHeaderMenuRef = useRef<HTMLDivElement>(null);
   const tableMetaBarRef = useRef<HTMLDivElement | null>(null);
   const [stickyCellLeftPx, setStickyCellLeftPx] = useState<number[]>([]);
   const [layoutResizeSeq, setLayoutResizeSeq] = useState(0);
@@ -961,6 +990,10 @@ export default function App() {
   const [gtopLoggedIn, setGtopLoggedIn] = useState(false);
   const [gtopLoginModalOpen, setGtopLoginModalOpen] = useState(false);
   const [restoreDefaultTaskCsvBusy, setRestoreDefaultTaskCsvBusy] = useState(false);
+  const [excelBackgroundBusy, setExcelBackgroundBusy] = useState(false);
+  const excelFingerprintRef = useRef<ExcelWorkspaceMtimeFingerprint | null>(null);
+  const excelLoadSeqRef = useRef(0);
+  const excelLoadInFlightRef = useRef(0);
 
   const persist = useCallback(async (next: AppConfig) => {
     await invoke("save_config", { config: next });
@@ -1014,6 +1047,9 @@ export default function App() {
       taskTableFilter: normalizeTaskTableFilterFromDisk((c as AppConfig).taskTableFilter),
       savedSnapshots: rawSnaps.map((s) => ({ ...s, freezeThroughHeader: s.freezeThroughHeader ?? null })),
       savedTemplates: Array.isArray((c as AppConfig).savedTemplates) ? (c as AppConfig).savedTemplates : [],
+      recycledTemplates: Array.isArray((c as AppConfig).recycledTemplates)
+        ? (c as AppConfig).recycledTemplates
+        : [],
       sendTemplates: Array.isArray((c as AppConfig).sendTemplates) ? (c as AppConfig).sendTemplates : [],
     });
     setConfig({
@@ -1045,61 +1081,142 @@ export default function App() {
       gtopRegionServerName: (c as AppConfig).gtopRegionServerName ?? null,
       itemServerWideSendSettings: normalizeItemServerWideSendSettings((c as AppConfig).itemServerWideSendSettings),
       globalSendLastForm: normalizeGlobalSendLastForm((c as AppConfig).globalSendLastForm),
+      excelAutoRefreshIntervalSec: normalizeExcelAutoRefreshIntervalSec(
+        (c as AppConfig).excelAutoRefreshIntervalSec,
+      ),
     });
     const needWizard = !c.excelWorkspaceRoot.trim();
     setWizardOpen(needWizard);
   }, []);
 
   const loadExcelData = useCallback(
-    async (c: AppConfig, messageMode: "fetch" | "refresh" = "fetch") => {
-      excelLoadMessageModeRef.current = messageMode;
-      setLoadError(null);
-      setItemAoa(null);
-      setTaskAoa(null);
-      setAccountLevelByLevel(null);
-      setAccountLevelParseError(null);
+    async (c: AppConfig, messageMode: "fetch" | "refresh" | "silent" = "fetch"): Promise<boolean> => {
       const root = c.excelWorkspaceRoot.trim();
       if (!root) {
-        excelLoadMessageModeRef.current = "fetch";
-        return;
+        if (messageMode !== "silent") {
+          excelLoadMessageModeRef.current = "fetch";
+          setLoadError(null);
+          setItemAoa(null);
+          setTaskAoa(null);
+          setAccountLevelByLevel(null);
+          setAccountLevelParseError(null);
+        }
+        return false;
       }
+
+      if (messageMode === "silent") {
+        if (shouldSkipSilentExcelLoad(excelLoadInFlightRef.current)) return false;
+        try {
+          const fp = await invoke<ExcelWorkspaceMtimeFingerprint>("excel_workspace_mtime_fingerprint", {
+            root,
+          });
+          if (excelFingerprintRef.current && fingerprintsEqual(fp, excelFingerprintRef.current)) {
+            return false;
+          }
+        } catch {
+          // 指纹失败时仍尝试读取
+        }
+        if (shouldSkipSilentExcelLoad(excelLoadInFlightRef.current)) return false;
+      } else {
+        excelLoadMessageModeRef.current = messageMode;
+      }
+
+      const seq = ++excelLoadSeqRef.current;
+      excelLoadInFlightRef.current += 1;
+      setExcelBackgroundBusy(true);
+
+      if (messageMode !== "silent") {
+        setLoadError(null);
+        setItemAoa(null);
+        setTaskAoa(null);
+        setAccountLevelByLevel(null);
+        setAccountLevelParseError(null);
+      }
+
+      const applyLatest = (fn: () => void) => {
+        if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) fn();
+      };
+
       const ip = excelItemPath(root);
       const mp = excelMissionPath(root);
+      let succeeded = false;
       try {
-        const [ib64, mb64] = await Promise.all([invoke<string>("read_file_base64", { path: ip }), invoke<string>("read_file_base64", { path: mp })]);
+        const [ib64, mb64] = await Promise.all([
+          invoke<string>("read_file_base64", { path: ip }),
+          invoke<string>("read_file_base64", { path: mp }),
+        ]);
+        if (isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) return false;
+
         const item = readSheetFromWorkbook(ib64, "Item");
         const task = readSheetFromWorkbook(mb64, "Task");
-        setItemAoa(item);
-        setTaskAoa(task);
+        applyLatest(() => {
+          setItemAoa(item);
+          setTaskAoa(task);
+        });
         const headers = item[0]?.map((h) => cellStr(h)) ?? [];
-        let ridx = resolveRemarkColumnIndex(headers, c.itemRemarkColumn);
-        if (ridx < 0) {
-          setRemarkColIndex(-1);
-          setColumnPickOpen(true);
-        } else {
-          setRemarkColIndex(ridx);
-        }
+        const ridx = resolveRemarkColumnIndex(headers, c.itemRemarkColumn);
+        applyLatest(() => {
+          if (ridx < 0) {
+            if (messageMode !== "silent") {
+              setRemarkColIndex(-1);
+              setColumnPickOpen(true);
+            }
+          } else {
+            setRemarkColIndex(ridx);
+          }
+        });
         try {
           const accPath = excelAccountPath(root);
           const ab64 = await invoke<string>("read_file_base64", { path: accPath });
+          if (isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) return false;
+
           const accAoa = readSheetFromWorkbook(ab64, "AccountLevel");
           const parsed = parseAccountLevelSheet(accAoa);
-          if (parsed.ok) {
-            setAccountLevelByLevel(parsed.byLevel);
-            setAccountLevelParseError(null);
-          } else {
-            setAccountLevelByLevel(null);
-            setAccountLevelParseError(parsed.error);
-          }
+          applyLatest(() => {
+            if (parsed.ok) {
+              setAccountLevelByLevel(parsed.byLevel);
+              setAccountLevelParseError(null);
+            } else {
+              setAccountLevelByLevel(null);
+              setAccountLevelParseError(parsed.error);
+            }
+          });
         } catch (accE) {
-          setAccountLevelByLevel(null);
-          setAccountLevelParseError(accE instanceof Error ? accE.message : String(accE));
+          applyLatest(() => {
+            setAccountLevelByLevel(null);
+            setAccountLevelParseError(accE instanceof Error ? accE.message : String(accE));
+          });
         }
+        try {
+          const fp = await invoke<ExcelWorkspaceMtimeFingerprint>("excel_workspace_mtime_fingerprint", {
+            root,
+          });
+          if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
+            excelFingerprintRef.current = fp;
+          }
+        } catch {
+          if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
+            excelFingerprintRef.current = null;
+          }
+        }
+        succeeded = true;
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setLoadError(msg);
-        push(`读 Excel 失败: ${msg}`);
+        if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (messageMode === "silent") {
+            push(`后台同步失败: ${msg}`);
+          } else {
+            setLoadError(msg);
+            push(`读 Excel 失败: ${msg}`);
+          }
+        }
+        return false;
+      } finally {
+        excelLoadInFlightRef.current = Math.max(0, excelLoadInFlightRef.current - 1);
+        if (excelLoadInFlightRef.current === 0) setExcelBackgroundBusy(false);
       }
+
+      return succeeded && !isStaleExcelLoadSeq(seq, excelLoadSeqRef.current);
     },
     [push],
   );
@@ -1127,14 +1244,21 @@ export default function App() {
     const onFlush = () => flushSessionRef.current();
     window.addEventListener("beforeunload", onFlush);
     const onVis = () => {
-      if (document.visibilityState === "hidden") onFlush();
+      if (document.visibilityState === "hidden") {
+        onFlush();
+        return;
+      }
+      if (wizardOpen) return;
+      const c = configRef.current;
+      if (!c?.excelWorkspaceRoot.trim()) return;
+      void loadExcelData(c, "silent");
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
       window.removeEventListener("beforeunload", onFlush);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [loadExcelData, wizardOpen]);
 
   const onGmtSessionVerifiedLoggedIn = useCallback(() => {
     setGmtLoggedIn(true);
@@ -1315,9 +1439,23 @@ export default function App() {
   useEffect(() => {
     if (!config || wizardOpen) return;
     if (!excelWorkspaceRoot) return;
+    excelFingerprintRef.current = null;
     void loadExcelData(config, "fetch");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 向导关闭后加载 Excel
   }, [excelWorkspaceRoot, wizardOpen, loadExcelData]);
+
+  useEffect(() => {
+    if (!config || wizardOpen) return;
+    const sec = normalizeExcelAutoRefreshIntervalSec(config.excelAutoRefreshIntervalSec);
+    if (sec <= 0) return;
+    if (!excelWorkspaceRoot) return;
+    const id = window.setInterval(() => {
+      const c = configRef.current;
+      if (!c?.excelWorkspaceRoot.trim()) return;
+      void loadExcelData(c, "silent");
+    }, sec * 1000);
+    return () => window.clearInterval(id);
+  }, [config?.excelAutoRefreshIntervalSec, excelWorkspaceRoot, wizardOpen, loadExcelData]);
 
   const savedTemplateIds = useMemo(
     () => (config?.savedTemplates ?? []).map((t) => t.id).join("\0"),
@@ -2244,31 +2382,38 @@ export default function App() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "f") return;
-      if (wizardOpen || settingsOpen || !config || !currentAoa) return;
-      if (filterSheetOpen) {
-        e.preventDefault();
-        return;
-      }
-      const t = e.target;
-      if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) {
-        return;
-      }
+      if (!isCtrlOrCmdF(e)) return;
+      if (!shouldPreventNativeFind()) return;
+
       e.preventDefault();
-      if (isItemTableView) {
-        setItemFilterDraft(cloneItemTableFilter(config.itemTableFilter));
-        setItemFilterModalOpen(true);
-        setItemFilterQuickQuery("");
-        itemFilterQuickFocusPendingRef.current = true;
-      } else if (isTaskTableView) {
-        setTaskFilterDraft(cloneTaskTableFilter(config.taskTableFilter));
-        setTaskFilterModalOpen(true);
-        setTaskFilterQuickQuery("");
-        taskFilterQuickFocusPendingRef.current = true;
+      e.stopPropagation();
+
+      const ctx = {
+        wizardOpen,
+        settingsOpen,
+        hasConfig: Boolean(config),
+        hasCurrentAoa: Boolean(currentAoa),
+        isItemTableView,
+        isTaskTableView,
+        itemFilterModalOpen: itemFilterModalOpen,
+        taskFilterModalOpen: taskFilterModalOpen,
+        eventTarget: e.target,
+      };
+
+      if (shouldOpenAppFilterModal(ctx)) {
+        openTableFilterModal();
+        if (isItemTableView) itemFilterQuickFocusPendingRef.current = true;
+        else if (isTaskTableView) taskFilterQuickFocusPendingRef.current = true;
+        return;
+      }
+
+      if (shouldRefocusFilterQuickSearch(ctx)) {
+        if (isItemTableView) itemFilterQuickInputRef.current?.focus();
+        else if (isTaskTableView) taskFilterQuickInputRef.current?.focus();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => document.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     wizardOpen,
     settingsOpen,
@@ -2276,7 +2421,9 @@ export default function App() {
     currentAoa,
     isItemTableView,
     isTaskTableView,
-    filterSheetOpen,
+    itemFilterModalOpen,
+    taskFilterModalOpen,
+    openTableFilterModal,
   ]);
 
   useEffect(() => {
@@ -2692,6 +2839,38 @@ export default function App() {
     [push, logOp],
   );
 
+  const addExpPresetDeps = useMemo((): AddExpPresetRunnerDeps | null => {
+    if (!config) return null;
+    return {
+      config,
+      cumulativeByLevel: accountLevelByLevel,
+      cumulativeLoadError: accountLevelParseError,
+      gmtAccountIdDraft,
+      ensureGmtLoggedIn,
+      logGmt,
+    };
+  }, [
+    config,
+    accountLevelByLevel,
+    accountLevelParseError,
+    gmtAccountIdDraft,
+    ensureGmtLoggedIn,
+    logGmt,
+  ]);
+
+  const runSidebarAddExpPreset = useCallback(
+    async (runner: (deps: AddExpPresetRunnerDeps) => Promise<void>) => {
+      if (!addExpPresetDeps || addExpPresetBusy) return;
+      setAddExpPresetBusy(true);
+      try {
+        await runner(addExpPresetDeps);
+      } finally {
+        setAddExpPresetBusy(false);
+      }
+    },
+    [addExpPresetDeps, addExpPresetBusy],
+  );
+
   const notify = useCallback(
     (
       text: string,
@@ -2739,9 +2918,37 @@ export default function App() {
 
   const onTableContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (selectedRows.size === 0) return;
-        setColumnHeaderMenu(null);
-    setCtxMenu({ x: e.clientX, y: e.clientY });
+    const dataIdx = resolveTableContextDataIdx(e.target);
+    if (dataIdx == null && selectedRows.size === 0) return;
+    if (!isItemTableView && !isTaskTableView) return;
+    setColumnHeaderMenu(null);
+    setCtxMenu({ x: e.clientX, y: e.clientY, dataIdx });
+  };
+
+  const copyContextRowId = async () => {
+    if (!ctxMenu || ctxMenu.dataIdx == null || !currentAoa || !config) {
+      closeCtx();
+      return;
+    }
+    const tableSource =
+      getCurrentTableSource(activeView, config) ?? (isItemTableView ? "item" : "task");
+    if (tableSource !== "item" && tableSource !== "task") {
+      closeCtx();
+      push("当前视图无法复制 ID");
+      return;
+    }
+    const id = parseTableRowIdForCopy(currentAoa, ctxMenu.dataIdx, tableSource);
+    closeCtx();
+    if (!id) {
+      push(tableSource === "item" ? "无法复制：缺少物品ID或该行为空" : "无法复制：缺少任务ID或该行为空");
+      return;
+    }
+    try {
+      await writeText(id);
+      push(tableSource === "item" ? `已复制物品 ID：${id}` : `已复制任务 ID：${id}`);
+    } catch (err) {
+      push(`复制失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const applyFreezeThrough = async (headerName: string | null) => {
@@ -2830,15 +3037,35 @@ export default function App() {
     notify("已重命名", { action: "重命名发送模板", outcome: "success", detail: trimmed });
   };
 
-  const removeTemplate = async (id: string) => {
+  const moveTemplateToRecycle = async (id: string) => {
     if (!config) return;
     const removed = config.savedTemplates.find((t) => t.id === id);
+    if (!removed) return;
     const list = config.savedTemplates.filter((t) => t.id !== id);
-    await persist({ ...config, savedTemplates: list });
+    const order =
+      config.sidebarTemplateOrder == null
+        ? null
+        : config.sidebarTemplateOrder.filter((tid) => tid !== id);
+    const recycled = [
+      ...(config.recycledTemplates ?? []),
+      { template: removed, deletedAt: Date.now() },
+    ];
+    await persist({
+      ...config,
+      savedTemplates: list,
+      recycledTemplates: recycled,
+      sidebarTemplateOrder: order,
+    });
     selectionByViewRef.current.delete(`template:${id}`);
     if ((activeView.kind === "template" || activeView.kind === "snapshot") && activeView.id === id) {
-      switchActiveView({ kind: removed?.source === "task" ? "task" : "item" });
+      switchActiveView({ kind: removed.source === "task" ? "task" : "item" });
     }
+  };
+
+  const purgeRecycledTemplate = async (id: string) => {
+    if (!config) return;
+    const recycled = (config.recycledTemplates ?? []).filter((r) => r.template.id !== id);
+    await persist({ ...config, recycledTemplates: recycled });
   };
 
   const sendTemplateItemsNow = async (title: string, items: SendTemplateItem[]) => {
@@ -2942,6 +3169,32 @@ export default function App() {
   const itemServerWideUi = useMemo(
     () => normalizeItemServerWideSendSettings(config?.itemServerWideSendSettings),
     [config?.itemServerWideSendSettings],
+  );
+
+  const ctxMenuContentKey = useMemo(() => {
+    if (!ctxMenu || !config) return null;
+    const tableSource =
+      getCurrentTableSource(activeView, config) ?? (isItemTableView ? "item" : "task");
+    const tplCount = config.savedTemplates.filter((t) => t.source === tableSource).length;
+    return `${selectedRows.size}-${tplCount}-${isTaskTableView}-${isItemTableView}-${activeView.kind}-${itemServerWideUi.entriesEnabled}-${ctxMenu.dataIdx ?? "n"}`;
+  }, [
+    ctxMenu,
+    config,
+    activeView,
+    isItemTableView,
+    isTaskTableView,
+    selectedRows.size,
+    itemServerWideUi.entriesEnabled,
+  ]);
+
+  const ctxMenuPos = useClampedMenuPosition(ctxMenu, ctxMenuRef, ctxMenuContentKey);
+  const columnHeaderMenuAnchor = columnHeaderMenu
+    ? { x: columnHeaderMenu.x, y: columnHeaderMenu.y }
+    : null;
+  const columnHeaderMenuPos = useClampedMenuPosition(
+    columnHeaderMenuAnchor,
+    columnHeaderMenuRef,
+    columnHeaderMenu?.headerName ?? null,
   );
 
   const openGlobalSendDialog = useCallback(
@@ -3787,6 +4040,7 @@ export default function App() {
           settingsOpen={settingsOpen}
           onClose={() => setSettingsOpen(false)}
           onPersist={persist}
+          onPurgeRecycledTemplate={(id) => void purgeRecycledTemplate(id)}
           onLoadExcelData={(next) => void loadExcelData(next)}
           gtopLoggedIn={gtopLoggedIn}
           onOpenGtopLogin={() => void openGtopLoginWindow()}
@@ -3826,6 +4080,12 @@ export default function App() {
                 style={{ width: "100%", boxSizing: "border-box" }}
                 value={templateNameDraft}
                 onChange={(e) => setTemplateNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void commitTemplateSave(templateNameDraft);
+                  }
+                }}
                 autoFocus
               />
             </div>
@@ -3862,6 +4122,12 @@ export default function App() {
                 onChange={(e) =>
                   setTemplateRenameModal((prev) => (prev ? { ...prev, draft: e.target.value } : null))
                 }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && templateRenameModal) {
+                    e.preventDefault();
+                    void commitTemplateRename(templateRenameModal.draft);
+                  }
+                }}
                 autoFocus
               />
             </div>
@@ -3879,9 +4145,9 @@ export default function App() {
       {pendingDeleteTemplate ? (
         <div className="modal-back" onMouseDown={() => setPendingDeleteTemplate(null)}>
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>删除发送模板</h2>
+            <h2>移入回收站</h2>
             <p className="help">
-              确定删除发送模板「<span title={pendingDeleteTemplate.title}>{pendingDeleteTemplate.title}</span>」？此操作不可恢复。
+              确定将发送模板「<span title={pendingDeleteTemplate.title}>{pendingDeleteTemplate.title}</span>」移入回收站？可在「设置 › 回收站」中彻底删除。
             </p>
             <div className="btn-row">
               <button type="button" className="btn" onClick={() => setPendingDeleteTemplate(null)}>
@@ -3893,10 +4159,10 @@ export default function App() {
                 onClick={() => {
                   const id = pendingDeleteTemplate.id;
                   setPendingDeleteTemplate(null);
-                  void removeTemplate(id);
+                  void moveTemplateToRecycle(id);
                 }}
               >
-                确认删除
+                移入回收站
               </button>
             </div>
           </div>
@@ -4053,6 +4319,7 @@ export default function App() {
                 ) : null}
                 <div className="filter-quick-search-row">
                   <input
+                    id="item-filter-quick"
                     ref={itemFilterQuickInputRef}
                     type="search"
                     className="filter-quick-search"
@@ -4270,6 +4537,7 @@ export default function App() {
                 ) : null}
                 <div className="filter-quick-search-row">
                   <input
+                    id="task-filter-quick"
                     ref={taskFilterQuickInputRef}
                     type="search"
                     className="filter-quick-search"
@@ -4386,18 +4654,25 @@ export default function App() {
         <div className="topbar-left">
           <img className="topbar-logo" src="/app-icon.svg" alt="" width={26} height={26} />
           <h1>easydone</h1>
+          {excelBackgroundBusy ? (
+            <span className="topbar-excel-sync-hint muted" role="status">
+              同步中…
+            </span>
+          ) : null}
           <button
             type="button"
             className="btn"
-            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim()}
+            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim() || excelBackgroundBusy}
             onClick={() => {
               if (!config?.excelWorkspaceRoot?.trim()) return;
-              void loadExcelData(config, "refresh");
               selectionByViewRef.current.delete("item");
               selectionByViewRef.current.delete("task");
               clearRowSelection();
               setItemLineQty({});
-              push("已从磁盘重新加载表格");
+              void (async () => {
+                const ok = await loadExcelData(config, "refresh");
+                if (ok) push("已从磁盘重新加载表格");
+              })();
             }}
           >
             刷新
@@ -4568,6 +4843,12 @@ export default function App() {
             if (filterSheetOpen) return;
             switchActiveView({ kind: "addExp" });
           }}
+          addExpPresetBusy={addExpPresetBusy}
+          onAddExpPresetMaxLevel={() => void runSidebarAddExpPreset(runAddExpPresetMaxLevel)}
+          onAddExpPresetRich={() => void runSidebarAddExpPreset(runAddExpPresetRich)}
+          onAddExpPresetRichAndMaxLevel={() =>
+            void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
+          }
           onCloseMenus={() => closeCtx()}
         />
         <div className="main-column">
@@ -4959,7 +5240,17 @@ export default function App() {
       </div>
 
       {ctxMenu ? (
-        <div className="context-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={ctxMenuRef}
+          className="context-menu"
+          style={{ left: (ctxMenuPos ?? ctxMenu).x, top: (ctxMenuPos ?? ctxMenu).y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {ctxMenu.dataIdx != null && (isItemTableView || isTaskTableView) ? (
+            <button type="button" onClick={() => void copyContextRowId()}>
+              {isItemTableView ? "复制物品 ID" : "复制任务 ID"}
+            </button>
+          ) : null}
           <button type="button" onClick={() => openTemplateNameModal()}>
             保存为模板
           </button>
@@ -5022,8 +5313,12 @@ export default function App() {
 
       {columnHeaderMenu ? (
         <div
+          ref={columnHeaderMenuRef}
           className="context-menu"
-          style={{ left: columnHeaderMenu.x, top: columnHeaderMenu.y }}
+          style={{
+            left: (columnHeaderMenuPos ?? columnHeaderMenu).x,
+            top: (columnHeaderMenuPos ?? columnHeaderMenu).y,
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           <button type="button" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>
