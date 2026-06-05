@@ -233,6 +233,10 @@ function main() {
   r = runGit(["rev-parse", "--short", "HEAD"]);
   const commit = r.ok ? r.out.trim() : "";
 
+  r = runGit(["fetch", github.remoteName, branch]);
+  if (!r.ok) fail(`git fetch ${branch} 失败: ${r.out}`);
+  log(`已同步远程 ${branch} → ${github.remoteName}/${branch}`);
+
   r = runGit(["push", "--force-with-lease", `${github.remoteName}`, `HEAD:${branch}`]);
   if (!r.ok) {
     writeSavesSlot(branch, {
