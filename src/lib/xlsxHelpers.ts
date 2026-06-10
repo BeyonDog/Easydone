@@ -10,16 +10,24 @@ export function base64ToUint8Array(b64: string): Uint8Array {
   return bytes;
 }
 
-export function readSheetFromWorkbook(b64: string, sheetName: string): SheetMatrix {
+export function readOptionalSheetFromWorkbook(b64: string, sheetName: string): SheetMatrix | null {
   const data = base64ToUint8Array(b64);
   const wb = XLSX.read(data, { type: "array" });
   const ws = wb.Sheets[sheetName];
-  if (!ws) {
+  if (!ws) return null;
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+  if (!aoa.length) return null;
+  return aoa;
+}
+
+export function readSheetFromWorkbook(b64: string, sheetName: string): SheetMatrix {
+  const aoa = readOptionalSheetFromWorkbook(b64, sheetName);
+  if (!aoa) {
+    const data = base64ToUint8Array(b64);
+    const wb = XLSX.read(data, { type: "array" });
     const names = wb.SheetNames.join(", ");
     throw new Error(`未找到工作表「${sheetName}」。已有表: ${names || "无"}`);
   }
-  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
-  if (!aoa.length) throw new Error(`工作表「${sheetName}」为空`);
   return aoa;
 }
 
@@ -83,6 +91,22 @@ export function resolveTypeRemarkColumnIndex(headers: string[]): number {
 
 export function resolveDefenseValueColumnIndex(headers: string[]): number {
   return headers.findIndex((h) => cellStr(h) === DEFENSE_HEADER);
+}
+
+const SEASON_ITEM_HEADER_CANDIDATES = ["赛季物品", "SeasonItem"];
+
+export function resolveSeasonItemColumnIndex(headers: string[]): number {
+  const norm = headers.map((h) => cellStr(h).toLowerCase());
+  for (const c of SEASON_ITEM_HEADER_CANDIDATES) {
+    const i = norm.indexOf(c.toLowerCase());
+    if (i >= 0) return i;
+  }
+  return -1;
+}
+
+/** 赛季物品列：1 表示赛季物品 */
+export function isSeasonItemCell(v: unknown): boolean {
+  return parseCellAsInteger(v) === 1;
 }
 
 export function resolveRemarkColumnIndex(headers: string[], saved: string | null | undefined): number {

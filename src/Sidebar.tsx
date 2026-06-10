@@ -39,6 +39,8 @@ export type SidebarProps = {
   onAddExpPresetRich?: () => void;
   onAddExpPresetRichAndMaxLevel?: () => void;
   onCloseMenus: () => void;
+  templateDropHoverId?: string | null;
+  templateDropRejectId?: string | null;
 };
 
 type PinnedMenuTarget = "item" | "task";
@@ -194,6 +196,8 @@ export function Sidebar({
   onAddExpPresetRich,
   onAddExpPresetRichAndMaxLevel,
   onCloseMenus,
+  templateDropHoverId = null,
+  templateDropRejectId = null,
 }: SidebarProps) {
   const [menu, setMenu] = useState<SidebarMenu | null>(null);
   const [colorTarget, setColorTarget] = useState<ColorTarget | null>(null);
@@ -266,9 +270,15 @@ export function Sidebar({
       t.source === "task" && (onCompleteTaskFromTemplate || onAcceptTasksFromTemplate);
     const withSidebarActions = hasItemActions || hasTaskActions;
 
+    const dropHover = templateDropHoverId === t.id;
+    const dropReject = templateDropRejectId === t.id;
+
     return (
       <div
-        className={`card card--sidebar card--sidebar-template card--template${withSidebarActions ? " card--sidebar-with-actions" : ""}${hasItemActions ? " card--sidebar-item-template" : ""}${hasTaskActions ? " card--sidebar-task-template" : ""}${isActive ? " active" : ""}`}
+        data-template-drop
+        data-template-id={t.id}
+        data-template-source={t.source}
+        className={`card card--sidebar card--sidebar-template card--template${withSidebarActions ? " card--sidebar-with-actions" : ""}${hasItemActions ? " card--sidebar-item-template" : ""}${hasTaskActions ? " card--sidebar-task-template" : ""}${isActive ? " active" : ""}${dropHover ? " card--template-drop-hover" : ""}${dropReject ? " card--template-drop-reject" : ""}`}
         style={sidebarCardAccentStyleObj(accent)}
         title={formatSidebarCardCreatedAt(t.createdAt)}
         onClick={() => {
@@ -503,6 +513,7 @@ export function Sidebar({
         >
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => {
               const pin = menu.pin;
               setMenu(null);
@@ -513,12 +524,15 @@ export function Sidebar({
           </button>
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => openColorPopover({ kind: "pinned", pin: menu.pin }, menu.x, menu.y)}
           >
             设置颜色…
           </button>
+          <div role="separator" className="context-menu-sep" />
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => {
               const pin = menu.pin;
               setMenu(null);
@@ -542,12 +556,15 @@ export function Sidebar({
         >
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => openColorPopover({ kind: "template", id: menu.id }, menu.x, menu.y)}
           >
             设置颜色…
           </button>
+          <div role="separator" className="context-menu-sep" />
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => {
               const list = config.savedTemplates.map((t) =>
                 t.id === menu.id ? { ...t, cardColor: null } : t,
@@ -560,6 +577,7 @@ export function Sidebar({
           </button>
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => {
               const { id, title } = menu;
               setMenu(null);
@@ -570,6 +588,7 @@ export function Sidebar({
           </button>
           <button
             type="button"
+            className="context-menu-item"
             onClick={() => {
               const { id, title } = menu;
               setMenu(null);

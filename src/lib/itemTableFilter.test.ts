@@ -10,6 +10,7 @@ const emptyFilter: ItemTableFilter = {
   defenseRange: false,
   defenseMin: null,
   defenseMax: null,
+  seasonItemOnly: false,
   customKeywordKeys: [],
 };
 
@@ -34,7 +35,7 @@ describe("rowPassesTypeRemarkFilterKeys", () => {
 });
 
 describe("rowPassesItemTableFilter", () => {
-  const col = { tr: 0, def: -1, qual: -1, remark: -1 };
+  const col = { tr: 0, def: -1, qual: -1, remark: -1, season: -1 };
 
   it("OR within typeRemarkKeys", () => {
     const f: ItemTableFilter = { ...emptyFilter, typeRemarkKeys: ["武器", "防具"] };
@@ -57,5 +58,21 @@ describe("rowPassesItemTableFilter", () => {
     const f: ItemTableFilter = { ...emptyFilter, customKeywordKeys: ["试"], typeRemarkKeys: ["武器"] };
     assert.equal(rowPassesItemTableFilter(["武器", "试炼"], f, col), true);
     assert.equal(rowPassesItemTableFilter(["防具", "试炼"], f, col), false);
+  });
+
+  it("filters season items when seasonItemOnly is set", () => {
+    const seasonCol = { tr: -1, def: -1, qual: -1, remark: -1, season: 0 };
+    const f: ItemTableFilter = { ...emptyFilter, seasonItemOnly: true };
+    assert.equal(rowPassesItemTableFilter([1], f, seasonCol), true);
+    assert.equal(rowPassesItemTableFilter([0], f, seasonCol), false);
+    assert.equal(rowPassesItemTableFilter([null], f, seasonCol), false);
+  });
+
+  it("AND seasonItemOnly with typeRemark", () => {
+    const colBoth = { tr: 0, def: -1, qual: -1, remark: -1, season: 1 };
+    const f: ItemTableFilter = { ...emptyFilter, seasonItemOnly: true, typeRemarkKeys: ["武器"] };
+    assert.equal(rowPassesItemTableFilter(["武器", 1], f, colBoth), true);
+    assert.equal(rowPassesItemTableFilter(["武器", 0], f, colBoth), false);
+    assert.equal(rowPassesItemTableFilter(["防具", 1], f, colBoth), false);
   });
 });

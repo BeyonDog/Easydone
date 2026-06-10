@@ -1,5 +1,6 @@
 import {
   defenseCellIsEmpty,
+  isSeasonItemCell,
   itemQualityFilterBucket,
   ITEM_TYPE_REMARK_PRESET_EMOTE,
   parseCellAsFiniteNumber,
@@ -9,7 +10,7 @@ import {
 } from "./xlsxHelpers.ts";
 import type { ItemTableFilter } from "../types.ts";
 
-export type ItemFilterColIdx = { tr: number; def: number; qual: number; remark: number };
+export type ItemFilterColIdx = { tr: number; def: number; qual: number; remark: number; season: number };
 
 export function rowPassesTypeRemarkFilterKeys(
   row: unknown[],
@@ -58,6 +59,9 @@ export function rowPassesItemTableFilter(
       if (inRange) ok = true;
     }
     if (!ok) return false;
+  }
+  if (f.seasonItemOnly && col.season >= 0) {
+    if (!isSeasonItemCell(row[col.season])) return false;
   }
   return true;
 }

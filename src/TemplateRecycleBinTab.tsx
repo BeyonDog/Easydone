@@ -5,12 +5,14 @@ import { RecycledTemplateThumbCard } from "./RecycledTemplateThumbCard.tsx";
 export type TemplateRecycleBinTabProps = {
   config: AppConfig;
   recycledTemplates: RecycledTemplate[];
+  onRestore: (id: string) => void | Promise<void>;
   onPurge: (id: string) => void | Promise<void>;
 };
 
 export function TemplateRecycleBinTab({
   config,
   recycledTemplates,
+  onRestore,
   onPurge,
 }: TemplateRecycleBinTabProps) {
   const [pendingPurge, setPendingPurge] = useState<{ id: string; title: string } | null>(null);
@@ -23,15 +25,14 @@ export function TemplateRecycleBinTab({
 
   return (
     <>
-      <p className="help muted">
-        已删除的侧栏模板以缩略卡片展示；彻底删除后无法恢复。
-      </p>
+      <p className="help muted">可还原到侧栏，或彻底删除（不可恢复）。</p>
       <div className="template-recycle-grid">
         {sorted.map((entry) => (
           <RecycledTemplateThumbCard
             key={entry.template.id}
             config={config}
             entry={entry}
+            onRequestRestore={(id) => void onRestore(id)}
             onRequestPurge={(id, title) => setPendingPurge({ id, title })}
           />
         ))}

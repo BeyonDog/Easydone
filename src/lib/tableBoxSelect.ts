@@ -1,5 +1,6 @@
 export const DRAG_THRESHOLD_PX = 4;
 export const TABLE_ROW_HEIGHT_ESTIMATE = 30;
+export const DEFAULT_SCROLLBAR_SIZE_PX = 8;
 
 export type RowBandHitResult = {
   firstVis: number;
@@ -15,6 +16,61 @@ export type BoxSelectPointerState = {
   originScrollTop: number;
   originScrollLeft: number;
 };
+
+export type ScrollbarHitRect = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+export function isNativeScrollbarHitRect(
+  rect: ScrollbarHitRect,
+  scrollHeight: number,
+  clientHeight: number,
+  scrollWidth: number,
+  clientWidth: number,
+  clientX: number,
+  clientY: number,
+  scrollbarSize = DEFAULT_SCROLLBAR_SIZE_PX,
+): boolean {
+  const hasVScroll = scrollHeight > clientHeight;
+  const hasHScroll = scrollWidth > clientWidth;
+  if (hasVScroll && clientX >= rect.right - scrollbarSize) return true;
+  if (hasHScroll && clientY >= rect.bottom - scrollbarSize) return true;
+  return false;
+}
+
+export function isNativeScrollbarHit(
+  el: HTMLElement,
+  clientX: number,
+  clientY: number,
+  scrollbarSize = DEFAULT_SCROLLBAR_SIZE_PX,
+): boolean {
+  const r = el.getBoundingClientRect();
+  return isNativeScrollbarHitRect(
+    r,
+    el.scrollHeight,
+    el.clientHeight,
+    el.scrollWidth,
+    el.clientWidth,
+    clientX,
+    clientY,
+    scrollbarSize,
+  );
+}
+
+export function isTableScrollbarHit(
+  scrollYEl: HTMLElement | null,
+  scrollXEl: HTMLElement | null,
+  clientX: number,
+  clientY: number,
+  scrollbarSize = DEFAULT_SCROLLBAR_SIZE_PX,
+): boolean {
+  if (scrollYEl && isNativeScrollbarHit(scrollYEl, clientX, clientY, scrollbarSize)) return true;
+  if (scrollXEl && isNativeScrollbarHit(scrollXEl, clientX, clientY, scrollbarSize)) return true;
+  return false;
+}
 
 export function pointerDragDistancePx(sel: BoxSelectPointerState): number {
   const dx = sel.curClientX - sel.startClientX;
@@ -107,6 +163,7 @@ export function applyBoxSelectToggle(
   return { selectedRows: next, selectedRowOrder: mergedOrder };
 }
 
+/** @deprecated Use boxSelectOverlayStyleFixed — absolute overlay expands scrollable overflow. */
 export function boxSelectOverlayStyle(
   sel: BoxSelectPointerState,
   wrapRect: DOMRect,
@@ -124,5 +181,23 @@ export function boxSelectOverlayStyle(
     top,
     width: Math.max(1, Math.abs(x2 - x1)),
     height: Math.max(1, Math.abs(y2 - y1)),
+  };
+}
+
+export function boxSelectOverlayStyleFixed(sel: BoxSelectPointerState): {
+  position: "fixed";
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} {
+  const left = Math.min(sel.startClientX, sel.curClientX);
+  const top = Math.min(sel.startClientY, sel.curClientY);
+  return {
+    position: "fixed",
+    left,
+    top,
+    width: Math.max(1, Math.abs(sel.curClientX - sel.startClientX)),
+    height: Math.max(1, Math.abs(sel.curClientY - sel.startClientY)),
   };
 }

@@ -23,3 +23,7 @@ export function excelAccountPath(root: string) {
 export function taskCsvCandidatePaths(root: string): string[] {
   return [joinPaths(root, "Config", "task.csv"), joinPaths(root, "Config", "Task.csv")];
 }
+
+export function itemCsvCandidatePaths(root: string): string[] {
+  return [joinPaths(root, "Config", "Item.csv"), joinPaths(root, "Config", "item.csv")];
+}

@@ -8,12 +8,14 @@ import {
 export type RecycledTemplateThumbCardProps = {
   config: AppConfig;
   entry: RecycledTemplate;
+  onRequestRestore: (id: string, title: string) => void;
   onRequestPurge: (id: string, title: string) => void;
 };
 
 export function RecycledTemplateThumbCard({
   config,
   entry,
+  onRequestRestore,
   onRequestPurge,
 }: RecycledTemplateThumbCardProps) {
   const { template, deletedAt } = entry;
@@ -31,13 +33,22 @@ export function RecycledTemplateThumbCard({
           <span className="card-sub">删除：{formatSidebarCardCreatedAt(deletedAt)}</span>
         </div>
       </div>
-      <button
-        type="button"
-        className="btn recycle-thumb-purge"
-        onClick={() => onRequestPurge(template.id, template.title)}
-      >
-        彻底删除
-      </button>
+      <div className="recycle-thumb-actions">
+        <button
+          type="button"
+          className="btn recycle-thumb-action"
+          onClick={() => onRequestRestore(template.id, template.title)}
+        >
+          还原
+        </button>
+        <button
+          type="button"
+          className="btn recycle-thumb-action recycle-thumb-action--purge"
+          onClick={() => onRequestPurge(template.id, template.title)}
+        >
+          彻底删除
+        </button>
+      </div>
     </div>
   );
 }

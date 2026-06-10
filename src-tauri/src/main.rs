@@ -83,6 +83,8 @@ struct ItemTableFilter {
     defense_min: Option<f64>,
     defense_max: Option<f64>,
     #[serde(default)]
+    season_item_only: bool,
+    #[serde(default)]
     type_remark_key_order: Option<Vec<String>>,
     #[serde(default)]
     quality_key_order: Option<Vec<String>>,
@@ -260,6 +262,8 @@ struct AppConfig {
     global_send_last_form: Option<GlobalSendLastForm>,
     #[serde(default = "default_excel_auto_refresh_interval_sec")]
     excel_auto_refresh_interval_sec: u64,
+    #[serde(default)]
+    show_item_type_in_table: bool,
 }
 
 fn default_excel_auto_refresh_interval_sec() -> u64 {
@@ -341,6 +345,7 @@ impl Default for AppConfig {
             item_server_wide_send_settings: Some(ItemServerWideSendSettings::default()),
             global_send_last_form: None,
             excel_auto_refresh_interval_sec: default_excel_auto_refresh_interval_sec(),
+            show_item_type_in_table: false,
         }
     }
 }
@@ -612,8 +617,11 @@ fn main() {
             gtop::gtop_fetch_envs,
             gtop::gtop_fetch_region_servers,
             gtop::gtop_fetch_task_csv_file_path,
+            gtop::gtop_fetch_item_csv_file_path,
             gtop::gtop_upload_task_csv,
+            gtop::gtop_upload_item_csv,
             gtop::gtop_make_temp_task_csv,
+            gtop::gtop_make_temp_item_csv,
             gtop::read_text_file,
             gtop::write_text_file,
             gtop::path_is_file,

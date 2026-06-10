@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ITEM_TYPE_REMARK_PRESET_EMOTE } from "./lib/xlsxHelpers";
 import { FilterChipRowShell, PinnedMoreChipRow, QualityChipRow } from "./FilterChipBarShared";
 
+export const SEASON_ITEM_CHIP_KEY = "赛季物品";
+
 export const TYPE_REMARK_PINNED_KEYS = [
   ITEM_TYPE_REMARK_PRESET_EMOTE,
   "武器",
@@ -30,6 +32,7 @@ export type ItemFilterChipBarProps = {
   showEmotePin: boolean;
   showTypeRemarkPins: boolean;
   showQualityRow: boolean;
+  showSeasonRow: boolean;
   onToggleTypeRemark: (key: string) => void;
   onToggleQuality: (key: string) => void;
   onReorderTypeRemark?: (orderedKeys: string[]) => void;
@@ -61,6 +64,7 @@ export function ItemFilterChipBar({
   showEmotePin,
   showTypeRemarkPins,
   showQualityRow,
+  showSeasonRow,
   onToggleTypeRemark,
   onToggleQuality,
   onReorderTypeRemark,
@@ -103,6 +107,7 @@ export function ItemFilterChipBar({
   }, [typeMoreOpen]);
 
   const filterTypeRemarkKey = (key: string) => {
+    if (key === SEASON_ITEM_CHIP_KEY) return showSeasonRow;
     if (key === ITEM_TYPE_REMARK_PRESET_EMOTE) return showEmotePin;
     return showTypeRemarkPins;
   };
@@ -136,11 +141,11 @@ export function ItemFilterChipBar({
       </FilterChipRowShell>
 
       <FilterChipRowShell
-        label="类型备注"
+        label="类型"
         onClear={onClearTypeRemark}
         clearDisabled={typeRemarkClearDisabled}
       >
-        {!showEmotePin && !showTypeRemarkPins ? (
+        {!showEmotePin && !showTypeRemarkPins && !showSeasonRow ? (
           <span className="filter-chip-row-muted">无可用列</span>
         ) : (
           <PinnedMoreChipRow

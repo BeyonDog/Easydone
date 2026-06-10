@@ -58,6 +58,7 @@ export type SettingsModalProps = {
   appUpdaterManifestUrl: string;
   onAppUpdaterCheck: () => void;
   onPurgeRecycledTemplate: (id: string) => void | Promise<void>;
+  onRestoreRecycledTemplate: (id: string) => void | Promise<void>;
 };
 
 export function SettingsModal({
@@ -76,6 +77,7 @@ export function SettingsModal({
   appUpdaterManifestUrl,
   onAppUpdaterCheck,
   onPurgeRecycledTemplate,
+  onRestoreRecycledTemplate,
 }: SettingsModalProps) {
   const [settingsTab, setSettingsTab] = useState<"general" | "serverWide" | "gtop" | "recycle">("general");
   const [ex, setEx] = useState(config.excelWorkspaceRoot ?? "");
@@ -94,6 +96,7 @@ export function SettingsModal({
     normalizeItemServerWideSendSettings(config.itemServerWideSendSettings),
   );
   const [autoRefreshSec, setAutoRefreshSec] = useState(String(DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC));
+  const [showItemTypeInTable, setShowItemTypeInTable] = useState(Boolean(config.showItemTypeInTable));
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,6 +111,7 @@ export function SettingsModal({
     setSidebarItemHex(sidebarItemDefaultColor(config));
     setSidebarTaskHex(sidebarTaskDefaultColor(config));
     setAutoRefreshSec(String(normalizeExcelAutoRefreshIntervalSec(config.excelAutoRefreshIntervalSec)));
+    setShowItemTypeInTable(Boolean(config.showItemTypeInTable));
   }, [settingsOpen, config]);
 
   useEffect(() => {
@@ -210,6 +214,7 @@ export function SettingsModal({
       sidebarTaskCardColor: normalizeSidebarCardColor(sidebarTaskHex, DEFAULT_SIDEBAR_TASK_CARD_COLOR),
       itemServerWideSendSettings: normalizeItemServerWideSendSettings(serverWideDraft),
       excelAutoRefreshIntervalSec: normalizeExcelAutoRefreshIntervalSec(autoRefreshSec),
+      showItemTypeInTable,
     };
     await onPersist(next);
     onClose();
@@ -314,6 +319,7 @@ export function SettingsModal({
               config={config}
               recycledTemplates={config.recycledTemplates ?? []}
               onPurge={onPurgeRecycledTemplate}
+              onRestore={onRestoreRecycledTemplate}
             />
           ) : null}
           {settingsTab === "general" ? (
@@ -340,6 +346,19 @@ export function SettingsModal({
                 />
                 <p className="help" style={{ marginTop: "0.35rem" }}>
                   0 表示关闭；默认 {DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC}（30 分钟）。文件未变更时不重新读盘，主表不闪屏。
+                </p>
+              </div>
+              <div className="field">
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={showItemTypeInTable}
+                    onChange={(e) => setShowItemTypeInTable(e.target.checked)}
+                  />
+                  显示道具类型
+                </label>
+                <p className="help" style={{ marginTop: "0.35rem" }}>
+                  开启后，物品表「物品ID」列显示为「ID(类型名)」，如 1180147(皮肤礼包)。复制与发送仍使用纯数字 ID。
                 </p>
               </div>
               <div className="field">

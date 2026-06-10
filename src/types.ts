@@ -10,6 +10,8 @@ export interface ItemTableFilter {
   defenseRange: boolean;
   defenseMin: number | null;
   defenseMax: number | null;
+  /** 仅显示「赛季物品」列为 1 的行 */
+  seasonItemOnly?: boolean;
   /** 类型备注选项展示顺序；null 表示按默认规则 */
   typeRemarkKeyOrder?: string[] | null;
   /** 物品品质选项展示顺序 */
@@ -18,8 +20,8 @@ export interface ItemTableFilter {
   chipBarTypeRemarkOrder?: string[] | null;
   /** 顶栏 Chip 条：物品品质顺序 */
   chipBarQualityOrder?: string[] | null;
-  /** 弹窗内区块顺序：类型备注 / 物品品质 / 防护值；null 为默认 typeRemark→quality→defense */
-  sectionOrder?: ("typeRemark" | "quality" | "defense")[] | null;
+  /** 弹窗内区块顺序：类型 / 物品品质 / 防护值；null 为默认 typeRemark→quality→defense（赛季物品在类型区块内） */
+  sectionOrder?: ("typeRemark" | "quality" | "defense" | "seasonItem")[] | null;
   /** Ctrl+F / 快捷框：任一格包含子串（不区分大小写）；与其它轴为且 */
   rowKeyword?: string | null;
   /** 用户保存的自定义关键字筛选项（顶栏 Chip） */
@@ -167,6 +169,8 @@ export interface AppConfig {
   globalSendLastForm?: GlobalSendLastForm | null;
   /** 后台静默同步 Excel 间隔（秒）；0 为关闭，默认 1800（30 分钟） */
   excelAutoRefreshIntervalSec?: number | null;
+  /** 物品表「物品ID」列旁以括号显示类型名 */
+  showItemTypeInTable?: boolean;
 }
 
 export type ActiveView =

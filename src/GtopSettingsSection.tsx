@@ -11,6 +11,7 @@ import {
   type GtopEnvEntry,
   type GtopRegionServerEntry,
 } from "./lib/gtopClient.ts";
+import { resolveItemCsvPath } from "./lib/resolveItemCsv.ts";
 import { resolveTaskCsvPath } from "./lib/resolveTaskCsv.ts";
 
 export type GtopSettingsSectionProps = {
@@ -31,6 +32,7 @@ export function GtopSettingsSection({
   const [envs, setEnvs] = useState<GtopEnvEntry[]>([]);
   const [servers, setServers] = useState<GtopRegionServerEntry[]>([]);
   const [taskCsvPath, setTaskCsvPath] = useState<string | null>(null);
+  const [itemCsvPath, setItemCsvPath] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -79,6 +81,7 @@ export function GtopSettingsSection({
 
   useEffect(() => {
     void resolveTaskCsvPath(config.excelWorkspaceRoot).then(setTaskCsvPath);
+    void resolveItemCsvPath(config.excelWorkspaceRoot).then(setItemCsvPath);
   }, [config.excelWorkspaceRoot]);
 
   useEffect(() => {
@@ -136,11 +139,15 @@ export function GtopSettingsSection({
   return (
     <div className="gtop-settings">
       <p className="help">
-        用于任务表 GTOP 接取与 Chip 条「恢复默认 task.csv」：读取工作区 <code>Config/task.csv</code> 上传到区服（接取会清空所选任务的 PreTaskID；恢复默认上传原始文件，不修改本地文件）。
+        用于任务表 GTOP 接取、道具表「修改价格」「还原默认价格」，以及 Chip 条「恢复默认 task.csv」：读取工作区 Config 下 CSV 上传到区服（不修改本地文件）。
       </p>
       <div className="field">
         <label>本地 task.csv</label>
         <div className="path">{taskCsvPath ?? "未找到（请配置工作区且存在 Config/task.csv 或 Task.csv）"}</div>
+      </div>
+      <div className="field">
+        <label>本地 Item.csv</label>
+        <div className="path">{itemCsvPath ?? "未找到（请配置工作区且存在 Config/Item.csv 或 item.csv）"}</div>
       </div>
       <p className={`help${gtopLoggedIn ? " gmt-status--ok" : ""}`}>
         {gtopLoggedIn ? "GTOP 已登录" : "GTOP 未登录"}

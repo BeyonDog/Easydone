@@ -5,11 +5,13 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { AddExpPanel } from "./AddExpPanel";
 import { useClampedMenuPosition } from "./hooks/useClampedMenuPosition.ts";
+import { useTableAxisScroll } from "./hooks/useTableAxisScroll.ts";
+import { useTableRowToTemplateDrag } from "./hooks/useTableRowToTemplateDrag.tsx";
 import { GlobalSendMailModal } from "./GlobalSendMailModal.tsx";
 import { ColumnPickModal } from "./ColumnPickModal";
 import { DataTableBody, TABLE_ROW_HEIGHT_ESTIMATE } from "./DataTableBody";
 import { FilterOptionGrid } from "./FilterOptionGrid";
-import { ItemFilterChipBar, TYPE_REMARK_PINNED_KEYS } from "./ItemFilterChipBar";
+import { ItemFilterChipBar, SEASON_ITEM_CHIP_KEY, TYPE_REMARK_PINNED_KEYS } from "./ItemFilterChipBar";
 import { TaskFilterChipBar } from "./TaskFilterChipBar";
 import type {
   ActiveView,
@@ -37,6 +39,8 @@ import {
 } from "./lib/ctrlFFilterShortcut.ts";
 import { parseAccountLevelSheet } from "./lib/accountLevelExp";
 import {
+  isDisplayableTableBodyRow,
+  isSelectableTableDataRow,
   parseTableRowIdForCopy,
   resolveTableContextDataIdx,
 } from "./lib/tableRowId.ts";
@@ -45,10 +49,13 @@ import {
   cellStr,
   itemQualityFilterBucket,
   itemQualityPrefixFromCell,
+  readOptionalSheetFromWorkbook,
   readSheetFromWorkbook,
   resolveDefenseValueColumnIndex,
+  resolveItemIdColumnIndex,
   resolveItemQualityColumnIndex,
   resolveRemarkColumnIndex,
+  resolveSeasonItemColumnIndex,
   resolveTaskChainColumnIndex,
   resolveTaskTypeColumnIndex,
   resolveTypeRemarkColumnIndex,
@@ -78,12 +85,22 @@ import {
 } from "./lib/viewSelectionCache";
 import {
   applyBoxSelectToggle,
-  boxSelectOverlayStyle,
+  boxSelectOverlayStyleFixed,
   computeBoxSelectHitsFromPointer,
   DRAG_THRESHOLD_PX,
+  isTableScrollbarHit,
   type BoxSelectPointerState,
 } from "./lib/tableBoxSelect";
 import { mergePinnedOrder, partitionRowsByPinOrder } from "./lib/tablePinRows";
+import { toggleVisibleRowSelection } from "./lib/rowSelection.ts";
+import { parseItemLineQtyInput } from "./lib/itemLineQty.ts";
+import {
+  buildItemTypeLookupIndex,
+  EMPTY_ITEM_TYPE_LOOKUP_INDEX,
+  resolveItemRowSubTypeColumnIndex,
+  resolveItemRowTypeColumnIndex,
+  type ItemTypeLookupIndex,
+} from "./lib/itemTypeLookup.ts";
 import {
   applyWallpaperCssVarsToDocument,
   clampThemeWallpaperOpacity,
@@ -112,7 +129,15 @@ import {
 } from "./lib/completeTask";
 import { evaluateGmtTaskCompleteOneRow, evaluateGmtTaskSendReadiness } from "./lib/gmtTaskSendReadiness";
 import { acceptTasksViaGtop, restoreDefaultTaskCsvViaGtop } from "./lib/gtopAcceptTasks";
+import {
+  readItemPricesFromCsv,
+  readItemPricesFromTableRow,
+} from "./lib/gtopItemCsvPatch.ts";
+import { modifyItemPricesViaGtop, restoreItemDefaultPricesViaGtop } from "./lib/gtopModifyItemPrices.ts";
+import { resolveItemCsvPath } from "./lib/resolveItemCsv.ts";
 import { resolveTaskCsvPath } from "./lib/resolveTaskCsv";
+import { parseItemRowId } from "./lib/tableRowId.ts";
+import { ModifyItemPriceModal } from "./ModifyItemPriceModal.tsx";
 import {
   appendOperationLog,
   buildGmtOperationLog,
@@ -191,19 +216,25 @@ function normalizeItemSectionOrderFromDisk(raw: unknown): ItemFilterSectionId[] 
   const seen = new Set<string>();
   const out: ItemFilterSectionId[] = [];
   for (const x of raw) {
-    if (typeof x !== "string" || !allow.has(x) || seen.has(x)) continue;
+    if (typeof x !== "string" || x === "seasonItem" || !allow.has(x) || seen.has(x)) continue;
     seen.add(x);
     out.push(x as ItemFilterSectionId);
   }
   return out.length === ITEM_FILTER_SECTION_IDS.length ? out : null;
 }
 
-function mergeItemSectionOrder(saved: ItemFilterSectionId[] | null | undefined): ItemFilterSectionId[] {
-  if (!saved?.length) return [...ITEM_FILTER_SECTION_IDS];
+function mergeItemSectionOrder(
+  saved: readonly ("typeRemark" | "quality" | "defense" | "seasonItem")[] | null | undefined,
+): ItemFilterSectionId[] {
+  const filtered =
+    saved?.filter((id): id is ItemFilterSectionId =>
+      (ITEM_FILTER_SECTION_IDS as readonly string[]).includes(id),
+    ) ?? null;
+  if (!filtered?.length) return [...ITEM_FILTER_SECTION_IDS];
   const all = new Set(ITEM_FILTER_SECTION_IDS);
   const used = new Set<ItemFilterSectionId>();
   const out: ItemFilterSectionId[] = [];
-  for (const id of saved) {
+  for (const id of filtered) {
     if (all.has(id) && !used.has(id)) {
       out.push(id);
       used.add(id);
@@ -304,6 +335,7 @@ function emptyItemTableFilter(): ItemTableFilter {
     defenseRange: false,
     defenseMin: null,
     defenseMax: null,
+    seasonItemOnly: false,
     rowKeyword: null,
     customKeywordKeys: [],
   };
@@ -320,6 +352,7 @@ function normalizeItemTableFilterFromDisk(raw: unknown): ItemTableFilter | null 
     defenseRange: Boolean(o.defenseRange),
     defenseMin: typeof o.defenseMin === "number" && Number.isFinite(o.defenseMin) ? o.defenseMin : null,
     defenseMax: typeof o.defenseMax === "number" && Number.isFinite(o.defenseMax) ? o.defenseMax : null,
+    seasonItemOnly: Boolean(o.seasonItemOnly),
     typeRemarkKeyOrder: normalizeKeyOrderField(o.typeRemarkKeyOrder),
     qualityKeyOrder: normalizeKeyOrderField(o.qualityKeyOrder),
     sectionOrder: normalizeItemSectionOrderFromDisk((o as ItemTableFilter).sectionOrder),
@@ -343,6 +376,7 @@ function clearItemFilterSelectionsKeepOrder(d: ItemTableFilter): ItemTableFilter
     defenseRange: false,
     defenseMin: null,
     defenseMax: null,
+    seasonItemOnly: false,
     rowKeyword: null,
     customKeywordKeys: [],
   };
@@ -357,6 +391,7 @@ function cloneItemTableFilter(f: ItemTableFilter | null): ItemTableFilter {
     defenseRange: f.defenseRange,
     defenseMin: f.defenseMin,
     defenseMax: f.defenseMax,
+    seasonItemOnly: Boolean(f.seasonItemOnly),
     typeRemarkKeyOrder: f.typeRemarkKeyOrder?.length ? [...f.typeRemarkKeyOrder] : null,
     qualityKeyOrder: f.qualityKeyOrder?.length ? [...f.qualityKeyOrder] : null,
     sectionOrder: f.sectionOrder?.length ? [...f.sectionOrder] : null,
@@ -376,6 +411,7 @@ function itemTableFilterIsInactive(f: ItemTableFilter | null): boolean {
     f.qualityKeys.length === 0 &&
     !f.defenseNone &&
     !f.defenseRange &&
+    !f.seasonItemOnly &&
     !(f.rowKeyword?.trim()) &&
     f.customKeywordKeys.length === 0
   );
@@ -874,6 +910,7 @@ const defaultConfig = (): AppConfig => ({
   gtopRegionServerId: null,
   gtopRegionServerName: null,
   excelAutoRefreshIntervalSec: DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
+  showItemTypeInTable: false,
 });
 
 function useToasts() {
@@ -906,6 +943,9 @@ export default function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [itemAoa, setItemAoa] = useState<SheetMatrix | null>(null);
+  const [itemTypeLookupIndex, setItemTypeLookupIndex] = useState<ItemTypeLookupIndex>(
+    EMPTY_ITEM_TYPE_LOOKUP_INDEX,
+  );
   const [taskAoa, setTaskAoa] = useState<SheetMatrix | null>(null);
   const [accountLevelByLevel, setAccountLevelByLevel] = useState<Map<number, number> | null>(null);
   const [accountLevelParseError, setAccountLevelParseError] = useState<string | null>(null);
@@ -951,6 +991,7 @@ export default function App() {
   const gmtBrowserOpenedThisSessionRef = useRef(false);
   const tableDataRef = useRef<HTMLTableElement | null>(null);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const boxSelectRef = useRef<BoxSelectPointerState | null>(null);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
   const columnHeaderMenuRef = useRef<HTMLDivElement>(null);
   const tableMetaBarRef = useRef<HTMLDivElement | null>(null);
@@ -990,6 +1031,13 @@ export default function App() {
   const [gtopLoggedIn, setGtopLoggedIn] = useState(false);
   const [gtopLoginModalOpen, setGtopLoginModalOpen] = useState(false);
   const [restoreDefaultTaskCsvBusy, setRestoreDefaultTaskCsvBusy] = useState(false);
+  const [itemPriceModal, setItemPriceModal] = useState<{
+    itemId: string;
+    baseValue: string;
+    stdPrice: string;
+  } | null>(null);
+  const [itemPriceSubmitting, setItemPriceSubmitting] = useState(false);
+  const [restoreItemPriceBusy, setRestoreItemPriceBusy] = useState(false);
   const [excelBackgroundBusy, setExcelBackgroundBusy] = useState(false);
   const excelFingerprintRef = useRef<ExcelWorkspaceMtimeFingerprint | null>(null);
   const excelLoadSeqRef = useRef(0);
@@ -1084,6 +1132,7 @@ export default function App() {
       excelAutoRefreshIntervalSec: normalizeExcelAutoRefreshIntervalSec(
         (c as AppConfig).excelAutoRefreshIntervalSec,
       ),
+      showItemTypeInTable: Boolean((c as AppConfig).showItemTypeInTable),
     });
     const needWizard = !c.excelWorkspaceRoot.trim();
     setWizardOpen(needWizard);
@@ -1098,6 +1147,7 @@ export default function App() {
           setLoadError(null);
           setItemAoa(null);
           setTaskAoa(null);
+          setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
           setAccountLevelByLevel(null);
           setAccountLevelParseError(null);
         }
@@ -1129,6 +1179,7 @@ export default function App() {
         setLoadError(null);
         setItemAoa(null);
         setTaskAoa(null);
+        setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
         setAccountLevelByLevel(null);
         setAccountLevelParseError(null);
       }
@@ -1149,9 +1200,14 @@ export default function App() {
 
         const item = readSheetFromWorkbook(ib64, "Item");
         const task = readSheetFromWorkbook(mb64, "Task");
+        const typeLookup = buildItemTypeLookupIndex(
+          readOptionalSheetFromWorkbook(ib64, "ItemType"),
+          readOptionalSheetFromWorkbook(ib64, "ItemSubType"),
+        );
         applyLatest(() => {
           setItemAoa(item);
           setTaskAoa(task);
+          setItemTypeLookupIndex(typeLookup);
         });
         const headers = item[0]?.map((h) => cellStr(h)) ?? [];
         const ridx = resolveRemarkColumnIndex(headers, c.itemRemarkColumn);
@@ -1620,15 +1676,44 @@ export default function App() {
     }));
   }, [currentAoa]);
 
+  const tableSheetSource = useMemo(
+    () => (config ? getCurrentTableSource(activeView, config) : null),
+    [config, activeView],
+  );
+
+  const dataBodyRows = useMemo(() => {
+    if (tableSheetSource !== "item" && tableSheetSource !== "task") return baseBodyRows;
+    if (!currentAoa) return baseBodyRows;
+    return baseBodyRows.filter(({ dataIdx }) =>
+      isDisplayableTableBodyRow(currentAoa, dataIdx, tableSheetSource),
+    );
+  }, [baseBodyRows, currentAoa, tableSheetSource]);
+
   const itemFilterColIdx = useMemo(() => {
-    if (!isItemTableView || !headers.length) return { tr: -1, def: -1, qual: -1, remark: -1 };
+    if (!isItemTableView || !headers.length) return { tr: -1, def: -1, qual: -1, remark: -1, season: -1 };
     return {
       tr: resolveTypeRemarkColumnIndex(headers),
       def: resolveDefenseValueColumnIndex(headers),
       qual: resolveItemQualityColumnIndex(headers),
       remark: resolveRemarkColumnIndex(headers, config?.itemRemarkColumn ?? null),
+      season: resolveSeasonItemColumnIndex(headers),
     };
   }, [isItemTableView, headers, config?.itemRemarkColumn]);
+
+  const itemIdColIndex = useMemo(() => {
+    if (!isItemTableView || !headers.length) return -1;
+    return resolveItemIdColumnIndex(headers);
+  }, [isItemTableView, headers]);
+
+  const itemTypeColIndex = useMemo(() => {
+    if (!isItemTableView || !headers.length) return -1;
+    return resolveItemRowTypeColumnIndex(headers);
+  }, [isItemTableView, headers]);
+
+  const itemSubTypeColIndex = useMemo(() => {
+    if (!isItemTableView || !headers.length) return -1;
+    return resolveItemRowSubTypeColumnIndex(headers);
+  }, [isItemTableView, headers]);
 
   const itemFilterOptions = useMemo(() => {
     if (!isItemTableView || !currentAoa || currentAoa.length < 2) {
@@ -1637,6 +1722,8 @@ export default function App() {
     const typeSet = new Set<string>();
     const qualSet = new Set<string>();
     for (let i = 1; i < currentAoa.length; i++) {
+      const dataIdx = i - 1;
+      if (!isDisplayableTableBodyRow(currentAoa, dataIdx, "item")) continue;
       const row = (currentAoa[i] ?? []) as unknown[];
       if (itemFilterColIdx.tr >= 0) {
         const trKey = typeRemarkFilterKey(row[itemFilterColIdx.tr]);
@@ -1656,12 +1743,14 @@ export default function App() {
   }, [isItemTableView, headers]);
 
   const taskFilterOptions = useMemo(() => {
-    if (isItemTableView || !currentAoa || currentAoa.length < 2) {
+    if (isItemTableView || !isTaskTableView || !currentAoa || currentAoa.length < 2) {
       return { taskType: [] as string[], chain: [] as string[] };
     }
     const ttSet = new Set<string>();
     const chSet = new Set<string>();
     for (let i = 1; i < currentAoa.length; i++) {
+      const dataIdx = i - 1;
+      if (!isDisplayableTableBodyRow(currentAoa, dataIdx, "task")) continue;
       const row = (currentAoa[i] ?? []) as unknown[];
       if (taskFilterColIdx.tt >= 0) ttSet.add(taskTypeFilterKey(row[taskFilterColIdx.tt]));
       if (taskFilterColIdx.ch >= 0) {
@@ -1670,7 +1759,7 @@ export default function App() {
       }
     }
     return { taskType: [...ttSet], chain: [...chSet] };
-  }, [isItemTableView, currentAoa, taskFilterColIdx]);
+  }, [isItemTableView, isTaskTableView, currentAoa, taskFilterColIdx]);
 
   const itemTypeRemarkDisplayKeys = useMemo(() => {
     if (itemFilterColIdx.remark < 0 && itemFilterColIdx.tr < 0) return [];
@@ -1722,14 +1811,26 @@ export default function App() {
     });
   }, [itemFilterColIdx.tr, itemFilterColIdx.remark]);
 
+  const chipTypeRemarkBarValidKeys = useMemo(() => {
+    const keys = [...itemTypeRemarkAllKeys];
+    if (itemFilterColIdx.season >= 0) keys.push(SEASON_ITEM_CHIP_KEY);
+    return keys;
+  }, [itemTypeRemarkAllKeys, itemFilterColIdx.season]);
+
   const chipTypeRemarkPinned = useMemo(() => {
     const saved = config?.itemTableFilter?.chipBarTypeRemarkOrder;
-    const allSet = new Set(itemTypeRemarkAllKeys);
+    const allSet = new Set(chipTypeRemarkBarValidKeys);
     if (saved?.length) {
       return saved.filter((k) => allSet.has(k));
     }
-    return chipTypeRemarkPinnedBase.filter((k) => allSet.has(k));
-  }, [itemTypeRemarkAllKeys, chipTypeRemarkPinnedBase, config?.itemTableFilter?.chipBarTypeRemarkOrder]);
+    const typeRemarkSet = new Set(itemTypeRemarkAllKeys);
+    return chipTypeRemarkPinnedBase.filter((k) => typeRemarkSet.has(k));
+  }, [
+    chipTypeRemarkBarValidKeys,
+    itemTypeRemarkAllKeys,
+    chipTypeRemarkPinnedBase,
+    config?.itemTableFilter?.chipBarTypeRemarkOrder,
+  ]);
 
   const chipQualityBarKeys = useMemo(() => {
     const saved = config?.itemTableFilter?.chipBarQualityOrder;
@@ -1742,8 +1843,8 @@ export default function App() {
 
   const chipTypeRemarkMore = useMemo(() => {
     const pin = new Set<string>(chipTypeRemarkPinned);
-    return itemTypeRemarkAllKeys.filter((k) => !pin.has(k));
-  }, [itemTypeRemarkAllKeys, chipTypeRemarkPinned]);
+    return chipTypeRemarkBarValidKeys.filter((k) => !pin.has(k));
+  }, [chipTypeRemarkBarValidKeys, chipTypeRemarkPinned]);
 
   const itemCustomKeywordAll = useMemo(
     () => allCustomKeywordKeys(config?.itemTableFilter ?? emptyItemTableFilter()),
@@ -1862,6 +1963,12 @@ export default function App() {
     [activeItemTableFilter],
   );
 
+  const chipTypeRemarkSelectedKeys = useMemo(() => {
+    const keys = [...activeItemFilterForChip.typeRemarkKeys];
+    if (activeItemFilterForChip.seasonItemOnly) keys.push(SEASON_ITEM_CHIP_KEY);
+    return keys;
+  }, [activeItemFilterForChip.typeRemarkKeys, activeItemFilterForChip.seasonItemOnly]);
+
   const activeTaskFilterForChip = useMemo(
     () => (activeTaskTableFilter ? cloneTaskTableFilter(activeTaskTableFilter) : emptyTaskTableFilter()),
     [activeTaskTableFilter],
@@ -1869,15 +1976,15 @@ export default function App() {
 
   const filteredBodyRows = useMemo(() => {
     if (isItemTableView) {
-      if (itemTableFilterIsInactive(activeItemTableFilter)) return baseBodyRows;
+      if (itemTableFilterIsInactive(activeItemTableFilter)) return dataBodyRows;
       const f = activeItemTableFilter!;
-      return baseBodyRows.filter(({ row }) => rowPassesItemTableFilter(row, f, itemFilterColIdx));
+      return dataBodyRows.filter(({ row }) => rowPassesItemTableFilter(row, f, itemFilterColIdx));
     }
-    if (taskTableFilterIsInactive(activeTaskTableFilter)) return baseBodyRows;
+    if (taskTableFilterIsInactive(activeTaskTableFilter)) return dataBodyRows;
     const tf = activeTaskTableFilter!;
-    return baseBodyRows.filter(({ row }) => rowPassesTaskTableFilter(row, tf, taskFilterColIdx));
+    return dataBodyRows.filter(({ row }) => rowPassesTaskTableFilter(row, tf, taskFilterColIdx));
   }, [
-    baseBodyRows,
+    dataBodyRows,
     isItemTableView,
     isTaskTableView,
     activeItemTableFilter,
@@ -1913,17 +2020,29 @@ export default function App() {
 
   const visibleDataIdxs = useMemo(() => displayBodyRows.map((r) => r.dataIdx), [displayBodyRows]);
 
+  const selectableVisibleDataIdxs = useMemo(() => {
+    if (!currentAoa?.length) return [] as number[];
+    if (isItemTableView) {
+      return visibleDataIdxs.filter((di) => isSelectableTableDataRow(currentAoa, di, "item"));
+    }
+    if (isTaskTableView) {
+      return visibleDataIdxs.filter((di) => isSelectableTableDataRow(currentAoa, di, "task"));
+    }
+    return visibleDataIdxs;
+  }, [visibleDataIdxs, currentAoa, isItemTableView, isTaskTableView]);
+
   const visibleSelectedCount = useMemo(() => {
     let n = 0;
-    for (const di of visibleDataIdxs) {
+    for (const di of selectableVisibleDataIdxs) {
       if (selectedRows.has(di)) n++;
     }
     return n;
-  }, [visibleDataIdxs, selectedRows]);
+  }, [selectableVisibleDataIdxs, selectedRows]);
 
   const allVisibleSelected =
-    visibleDataIdxs.length > 0 && visibleDataIdxs.every((di) => selectedRows.has(di));
-  const someVisibleSelected = visibleDataIdxs.some((di) => selectedRows.has(di));
+    selectableVisibleDataIdxs.length > 0 &&
+    selectableVisibleDataIdxs.every((di) => selectedRows.has(di));
+  const someVisibleSelected = selectableVisibleDataIdxs.some((di) => selectedRows.has(di));
 
   const openTableFilterModal = useCallback(() => {
     if (!config) return;
@@ -1989,7 +2108,7 @@ export default function App() {
         }
       }
       if (d.typeRemarkKeys.includes(ITEM_TYPE_REMARK_PRESET_EMOTE) && itemFilterColIdx.remark >= 0) {
-        const emoteHits = baseBodyRows.filter(({ row }) => rowMatchesEmotePreset(row[itemFilterColIdx.remark])).length;
+        const emoteHits = dataBodyRows.filter(({ row }) => rowMatchesEmotePreset(row[itemFilterColIdx.remark])).length;
         if (emoteHits === 0) {
           push("无匹配的 Emote 行，请检查「备注」列是否含 Emote");
           return;
@@ -1998,9 +2117,9 @@ export default function App() {
       const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
       const visible =
         nextFilter == null
-          ? new Set(baseBodyRows.map((r) => r.dataIdx))
+          ? new Set(dataBodyRows.map((r) => r.dataIdx))
           : new Set(
-              baseBodyRows
+              dataBodyRows
                 .filter(({ row }) => rowPassesItemTableFilter(row, nextFilter, itemFilterColIdx))
                 .map((r) => r.dataIdx),
             );
@@ -2017,7 +2136,7 @@ export default function App() {
       }
       void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
     },
-    [config, itemFilterDraft, baseBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
+    [config, itemFilterDraft, dataBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
   );
 
   const updateItemFilterPersist = useCallback(
@@ -2039,7 +2158,7 @@ export default function App() {
           }
         }
         if (d.typeRemarkKeys.includes(ITEM_TYPE_REMARK_PRESET_EMOTE) && itemFilterColIdx.remark >= 0) {
-          const emoteHits = baseBodyRows.filter(({ row }) =>
+          const emoteHits = dataBodyRows.filter(({ row }) =>
             rowMatchesEmotePreset(row[itemFilterColIdx.remark]),
           ).length;
           if (emoteHits === 0) {
@@ -2050,9 +2169,9 @@ export default function App() {
         const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
         const visible =
           nextFilter == null
-            ? new Set(baseBodyRows.map((r) => r.dataIdx))
+            ? new Set(dataBodyRows.map((r) => r.dataIdx))
             : new Set(
-                baseBodyRows
+                dataBodyRows
                   .filter(({ row }) => rowPassesItemTableFilter(row, nextFilter, itemFilterColIdx))
                   .map((r) => r.dataIdx),
               );
@@ -2066,7 +2185,7 @@ export default function App() {
         return { ...c, itemTableFilter: nextFilter };
       });
     },
-    [itemFilterModalOpen, baseBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
+    [itemFilterModalOpen, dataBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
   );
 
   const toggleItemFilterTypeRemarkKey = useCallback(
@@ -2127,12 +2246,24 @@ export default function App() {
   }, [updateItemFilterPersist]);
 
   const clearItemFilterTypeRemark = useCallback(() => {
-    updateItemFilterPersist((d) => ({ ...d, typeRemarkKeys: [] }));
+    updateItemFilterPersist((d) => ({ ...d, typeRemarkKeys: [], seasonItemOnly: false }));
   }, [updateItemFilterPersist]);
 
   const clearItemFilterQuality = useCallback(() => {
     updateItemFilterPersist((d) => ({ ...d, qualityKeys: [] }));
   }, [updateItemFilterPersist]);
+
+  const toggleItemFilterSeasonItem = useCallback(() => {
+    updateItemFilterPersist((d) => ({ ...d, seasonItemOnly: !d.seasonItemOnly }));
+  }, [updateItemFilterPersist]);
+
+  const toggleItemFilterTypeRemarkChip = useCallback(
+    (key: string) => {
+      if (key === SEASON_ITEM_CHIP_KEY) toggleItemFilterSeasonItem();
+      else toggleItemFilterTypeRemarkKey(key);
+    },
+    [toggleItemFilterSeasonItem, toggleItemFilterTypeRemarkKey],
+  );
 
   const updateTaskFilterPersist = useCallback(
     (updater: (prev: TaskTableFilter) => TaskTableFilter) => {
@@ -2144,9 +2275,9 @@ export default function App() {
         const nextFilter = taskTableFilterIsInactive(next) && !hasCustomTaskKeyOrder(next) ? null : next;
         const visible =
           nextFilter == null
-            ? new Set(baseBodyRows.map((r) => r.dataIdx))
+            ? new Set(dataBodyRows.map((r) => r.dataIdx))
             : new Set(
-                baseBodyRows
+                dataBodyRows
                   .filter(({ row }) => rowPassesTaskTableFilter(row, nextFilter, taskFilterColIdx))
                   .map((r) => r.dataIdx),
               );
@@ -2160,7 +2291,7 @@ export default function App() {
         return { ...c, taskTableFilter: nextFilter };
       });
     },
-    [taskFilterModalOpen, baseBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
+    [taskFilterModalOpen, dataBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
   );
 
   const toggleTaskFilterTaskTypeKey = useCallback(
@@ -2272,7 +2403,7 @@ export default function App() {
       push("请输入搜索关键字");
       return;
     }
-    const hasMatch = baseBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
+    const hasMatch = dataBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
     if (!hasMatch) {
       push("无包含该关键字的行");
       return;
@@ -2285,7 +2416,7 @@ export default function App() {
     itemFilterQuickQuery,
     itemFilterDraft,
     itemFilterModalOpen,
-    baseBodyRows,
+    dataBodyRows,
     persistSaveCustomKeyword,
     updateItemFilterPersist,
     push,
@@ -2298,7 +2429,7 @@ export default function App() {
       push("请输入搜索关键字");
       return;
     }
-    const hasMatch = baseBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
+    const hasMatch = dataBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
     if (!hasMatch) {
       push("无包含该关键字的行");
       return;
@@ -2311,7 +2442,7 @@ export default function App() {
     taskFilterQuickQuery,
     taskFilterDraft,
     taskFilterModalOpen,
-    baseBodyRows,
+    dataBodyRows,
     persistSaveCustomKeywordTask,
     updateTaskFilterPersist,
     push,
@@ -2325,9 +2456,9 @@ export default function App() {
       const nextFilter = taskTableFilterIsInactive(d) && !hasCustomTaskKeyOrder(d) ? null : d;
       const visible =
         nextFilter == null
-          ? new Set(baseBodyRows.map((r) => r.dataIdx))
+          ? new Set(dataBodyRows.map((r) => r.dataIdx))
           : new Set(
-              baseBodyRows
+              dataBodyRows
                 .filter(({ row }) => rowPassesTaskTableFilter(row, nextFilter, taskFilterColIdx))
                 .map((r) => r.dataIdx),
             );
@@ -2344,7 +2475,7 @@ export default function App() {
       }
       void saveTaskTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
     },
-    [config, taskFilterDraft, baseBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
+    [config, taskFilterDraft, dataBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
   );
 
   const clearSavedTableFilter = useCallback(() => {
@@ -2492,6 +2623,26 @@ export default function App() {
     return -1;
   }, [freezeAnchorHeader, visibleColIndices, headers]);
 
+  const {
+    scrollLeft: tableScrollLeft,
+    scrollLeftRef: tableScrollLeftRef,
+    hasHorizontalOverflow: tableHasHorizontalOverflow,
+    tableScrollBodyRef,
+    tableScrollXBarRef,
+    tableScrollSpacerRef,
+    tableScrollContentRef,
+    onHorizontalBarScroll,
+    onTableBodyWheel,
+    scrollBodyToTop,
+  } = useTableAxisScroll({
+    tableRef: tableDataRef,
+    shellRef: tableScrollRef,
+    layoutSeq: layoutResizeSeq,
+    contentSeq: currentAoa
+      ? visibleColIndices.length * 1_000_000 + displayBodyRows.length + headers.length
+      : 0,
+  });
+
   useLayoutEffect(() => {
     const wrap = tableScrollRef.current;
     const bar = tableMetaBarRef.current;
@@ -2499,7 +2650,7 @@ export default function App() {
     wrap.style.setProperty("--table-meta-row-height", `${bar.offsetHeight}px`);
   }, [
     visibleSelectedCount,
-    visibleDataIdxs.length,
+    selectableVisibleDataIdxs.length,
     allVisibleSelected,
     someVisibleSelected,
     isItemTableView,
@@ -2511,10 +2662,6 @@ export default function App() {
   ]);
 
   useLayoutEffect(() => {
-    if (freezeVisIdx < 0) {
-      setStickyCellLeftPx([]);
-      return;
-    }
     const table = tableDataRef.current;
     const tr = table?.tHead?.rows[0];
     if (!tr?.cells.length) {
@@ -2625,24 +2772,15 @@ export default function App() {
 
   const toggleSelectAllVisible = useCallback(() => {
     setSelectedRows((prev) => {
-      const next = new Set(prev);
-      const allSelected = visibleDataIdxs.length > 0 && visibleDataIdxs.every((di) => prev.has(di));
-      if (allSelected) {
-        for (const di of visibleDataIdxs) next.delete(di);
-        setSelectedRowOrder((order) => order.filter((di) => !visibleDataIdxs.includes(di)));
-      } else {
-        for (const di of visibleDataIdxs) next.add(di);
-        setSelectedRowOrder((order) => {
-          const merged = [...order];
-          for (const di of visibleDataIdxs) {
-            if (!merged.includes(di)) merged.push(di);
-          }
-          return merged;
-        });
-      }
-      return next;
+      const { selectedRows, selectedRowOrder } = toggleVisibleRowSelection(
+        prev,
+        selectedRowOrderRef.current,
+        selectableVisibleDataIdxs,
+      );
+      setSelectedRowOrder(selectedRowOrder);
+      return selectedRows;
     });
-  }, [visibleDataIdxs]);
+  }, [selectableVisibleDataIdxs]);
 
   const handlePinButtonClick = useCallback(() => {
     if (visibleSelectedCount > 0) {
@@ -2676,14 +2814,8 @@ export default function App() {
   ]);
 
   const scrollTableToTop = useCallback(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    try {
-      el.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      el.scrollTop = 0;
-    }
-  }, []);
+    scrollBodyToTop();
+  }, [scrollBodyToTop]);
 
   const canBoxSelect = Boolean(currentAoa) && activeView.kind !== "addExp";
 
@@ -2692,53 +2824,14 @@ export default function App() {
     if (!el) return false;
     if (el.closest("input,button,select,textarea,a,[role='button']")) return true;
     if (el.closest("thead")) return true;
+    if (el.closest(".table-selection-meta-bar")) return true;
     return false;
   };
 
-  const beginBoxSelect = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.button !== 0) return;
-      if (!canBoxSelect) return;
-      if (isBoxSelectInteractiveTarget(e.target)) return;
-
-      const wrap = tableScrollRef.current;
-      if (!wrap) return;
-      e.preventDefault();
-      e.stopPropagation();
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-
-      setBoxSelect({
-        startClientX: e.clientX,
-        startClientY: e.clientY,
-        curClientX: e.clientX,
-        curClientY: e.clientY,
-        originScrollTop: wrap.scrollTop,
-        originScrollLeft: wrap.scrollLeft,
-      });
-    },
-    [canBoxSelect],
-  );
-
-  const updateBoxSelect = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!boxSelect) return;
-      e.preventDefault();
-      setBoxSelect((s) => (s ? { ...s, curClientX: e.clientX, curClientY: e.clientY } : s));
-    },
-    [boxSelect],
-  );
-
-  const cancelBoxSelect = useCallback(() => {
-    setBoxSelect(null);
-  }, []);
-
-  const commitBoxSelect = useCallback(() => {
-    const wrap = tableScrollRef.current;
-    const sel = boxSelect;
+  const commitBoxSelectFromRef = useCallback(() => {
+    const wrap = tableScrollBodyRef.current;
+    const sel = boxSelectRef.current;
+    boxSelectRef.current = null;
     setBoxSelect(null);
     if (!wrap || !sel || !canBoxSelect) return;
 
@@ -2747,10 +2840,9 @@ export default function App() {
     if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     if (displayBodyRows.length === 0) return;
 
-    const metaH = tableMetaBarRef.current?.offsetHeight ?? 0;
     const table = tableDataRef.current;
     const headerH = table?.tHead?.rows[0]?.getBoundingClientRect().height ?? 0;
-    const bodyOffsetY = metaH + headerH;
+    const bodyOffsetY = headerH;
 
     const rowH =
       table?.tBodies?.[0]?.querySelector("tr:not(.virtual-spacer)")?.getBoundingClientRect().height ||
@@ -2774,34 +2866,119 @@ export default function App() {
     );
     setSelectedRows(toggled.selectedRows);
     setSelectedRowOrder(toggled.selectedRowOrder);
-  }, [boxSelect, canBoxSelect, displayBodyRows]);
+  }, [canBoxSelect, displayBodyRows]);
+
+  const beginBoxSelect = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      if (!canBoxSelect) return;
+      if (isBoxSelectInteractiveTarget(e.target)) return;
+
+      const wrap = tableScrollBodyRef.current;
+      if (!wrap) return;
+      if (isTableScrollbarHit(wrap, tableScrollXBarRef.current, e.clientX, e.clientY)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const session: BoxSelectPointerState = {
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        curClientX: e.clientX,
+        curClientY: e.clientY,
+        originScrollTop: wrap.scrollTop,
+        originScrollLeft: tableScrollLeftRef.current,
+      };
+      boxSelectRef.current = session;
+      setBoxSelect(session);
+
+      const pointerId = e.pointerId;
+      const captureTarget = e.currentTarget;
+
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        const cur = boxSelectRef.current;
+        if (!cur) return;
+        ev.preventDefault();
+        const next = { ...cur, curClientX: ev.clientX, curClientY: ev.clientY };
+        boxSelectRef.current = next;
+        setBoxSelect(next);
+      };
+
+      const onEnd = (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId) return;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onEnd);
+        window.removeEventListener("pointercancel", onEnd);
+        try {
+          captureTarget.releasePointerCapture(pointerId);
+        } catch {
+          // ignore
+        }
+        commitBoxSelectFromRef();
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onEnd);
+      window.addEventListener("pointercancel", onEnd);
+
+      try {
+        captureTarget.setPointerCapture(pointerId);
+      } catch {
+        // ignore
+      }
+    },
+    [canBoxSelect, commitBoxSelectFromRef],
+  );
 
   useEffect(() => {
     const el = selectAllCheckboxRef.current;
     if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
   }, [someVisibleSelected, allVisibleSelected]);
 
-  const bumpItemLineQty = (dataIdx: number, sign: 1 | -1) => {
-    if (sign === -1) {
-      setItemLineQty((q) => {
-        const cur = q[dataIdx] ?? 1;
-        if (cur <= 1) {
-          setSelectedRows((s) => {
-            const n = new Set(s);
-            n.delete(dataIdx);
-            return n;
-          });
-          setSelectedRowOrder((order) => order.filter((di) => di !== dataIdx));
-          const next = { ...q };
-          delete next[dataIdx];
-          return next;
-        }
-        return { ...q, [dataIdx]: cur - 1 };
-      });
-    } else {
-      setItemLineQty((q) => ({ ...q, [dataIdx]: Math.min(9999, (q[dataIdx] ?? 1) + 1) }));
-    }
-  };
+  const deselectItemRow = useCallback((dataIdx: number) => {
+    setSelectedRows((s) => {
+      const n = new Set(s);
+      n.delete(dataIdx);
+      return n;
+    });
+    setSelectedRowOrder((order) => order.filter((di) => di !== dataIdx));
+    setItemLineQty((q) => {
+      const next = { ...q };
+      delete next[dataIdx];
+      return next;
+    });
+  }, []);
+
+  const bumpItemLineQty = useCallback(
+    (dataIdx: number, sign: 1 | -1) => {
+      if (sign === -1) {
+        setItemLineQty((q) => {
+          const cur = q[dataIdx] ?? 1;
+          if (cur <= 1) {
+            deselectItemRow(dataIdx);
+            return q;
+          }
+          return { ...q, [dataIdx]: cur - 1 };
+        });
+      } else {
+        setItemLineQty((q) => ({ ...q, [dataIdx]: Math.min(9999, (q[dataIdx] ?? 1) + 1) }));
+      }
+    },
+    [deselectItemRow],
+  );
+
+  const setItemLineQtyDirect = useCallback(
+    (dataIdx: number, raw: string) => {
+      const parsed = parseItemLineQtyInput(raw);
+      if (parsed == null) {
+        deselectItemRow(dataIdx);
+        return;
+      }
+      setItemLineQty((q) => ({ ...q, [dataIdx]: parsed }));
+    },
+    [deselectItemRow],
+  );
 
   const toggleHideColumn = async (header: string, hide: boolean) => {
     if (!config || activeView.kind === "template" || activeView.kind === "snapshot") return;
@@ -2923,6 +3100,85 @@ export default function App() {
     if (!isItemTableView && !isTaskTableView) return;
     setColumnHeaderMenu(null);
     setCtxMenu({ x: e.clientX, y: e.clientY, dataIdx });
+  };
+
+  const openItemPriceModalFromContext = async () => {
+    if (!ctxMenu || ctxMenu.dataIdx == null || !currentAoa || !config) {
+      closeCtx();
+      return;
+    }
+    const dataIdx = ctxMenu.dataIdx;
+    closeCtx();
+    const itemId = parseItemRowId(currentAoa, dataIdx);
+    if (!itemId) {
+      push("无法修改：缺少物品 ID");
+      return;
+    }
+    let { baseValue, stdPrice } = readItemPricesFromTableRow(currentAoa, dataIdx);
+    const csvPath = await resolveItemCsvPath(config.excelWorkspaceRoot);
+    if (csvPath) {
+      try {
+        const csvText = await invoke<string>("read_text_file", { path: csvPath });
+        const fromCsv = readItemPricesFromCsv(csvText, itemId);
+        if (fromCsv) {
+          if (!baseValue) baseValue = fromCsv.baseValue;
+          if (!stdPrice) stdPrice = fromCsv.stdPrice;
+        }
+      } catch {
+        /* 预填失败时仍打开弹窗 */
+      }
+    }
+    setItemPriceModal({ itemId, baseValue, stdPrice });
+  };
+
+  const submitItemPriceModal = async (changes: { baseValue?: number; stdPrice?: number }) => {
+    if (!config || !itemPriceModal) return;
+    setItemPriceSubmitting(true);
+    try {
+      const result = await modifyItemPricesViaGtop({
+        config,
+        gtopLoggedIn,
+        itemId: itemPriceModal.itemId,
+        changes,
+      });
+      notify(result.toast, {
+        action: "GTOP 修改物品价格",
+        outcome: result.ok ? "success" : "failure",
+        detail: result.ok ? undefined : result.message,
+      });
+      if (result.ok) setItemPriceModal(null);
+    } finally {
+      setItemPriceSubmitting(false);
+    }
+  };
+
+  const restoreItemDefaultPricesFromContext = async () => {
+    if (!ctxMenu || ctxMenu.dataIdx == null || !currentAoa || !config) {
+      closeCtx();
+      return;
+    }
+    const dataIdx = ctxMenu.dataIdx;
+    closeCtx();
+    const itemId = parseItemRowId(currentAoa, dataIdx);
+    if (!itemId) {
+      push("无法还原：缺少物品 ID");
+      return;
+    }
+    setRestoreItemPriceBusy(true);
+    try {
+      const result = await restoreItemDefaultPricesViaGtop({
+        config,
+        gtopLoggedIn,
+        itemId,
+      });
+      notify(result.toast, {
+        action: "GTOP 还原默认物品价格",
+        outcome: result.ok ? "success" : "failure",
+        detail: result.ok ? undefined : result.message,
+      });
+    } finally {
+      setRestoreItemPriceBusy(false);
+    }
   };
 
   const copyContextRowId = async () => {
@@ -3066,6 +3322,37 @@ export default function App() {
     if (!config) return;
     const recycled = (config.recycledTemplates ?? []).filter((r) => r.template.id !== id);
     await persist({ ...config, recycledTemplates: recycled });
+  };
+
+  const restoreRecycledTemplate = async (id: string) => {
+    if (!config) return;
+    const entry = (config.recycledTemplates ?? []).find((r) => r.template.id === id);
+    if (!entry) return;
+    if (config.savedTemplates.some((t) => t.id === id)) {
+      notify("该模板已在侧栏中，无法重复还原", { action: "还原模板", outcome: "failure" });
+      return;
+    }
+    let list = [...config.savedTemplates, entry.template];
+    while (list.length > MAX_TEMPLATES) {
+      list.sort((a, b) => a.createdAt - b.createdAt);
+      list.shift();
+    }
+    const recycled = (config.recycledTemplates ?? []).filter((r) => r.template.id !== id);
+    let order = config.sidebarTemplateOrder;
+    if (order != null && !order.includes(id)) {
+      order = [...order, id];
+    }
+    await persist({
+      ...config,
+      savedTemplates: list,
+      recycledTemplates: recycled,
+      sidebarTemplateOrder: order,
+    });
+    notify(`已还原模板「${entry.template.title}」`, {
+      action: "还原模板",
+      outcome: "success",
+      detail: entry.template.title,
+    });
   };
 
   const sendTemplateItemsNow = async (title: string, items: SendTemplateItem[]) => {
@@ -3331,13 +3618,12 @@ export default function App() {
     [config, currentAoa, activeView, selectedRows, itemLineQty, push],
   );
 
-  const appendSelectedRowsToTemplate = useCallback(
-    async (templateId: string) => {
-      closeCtx();
+  const appendRowsToTemplate = useCallback(
+    async (templateId: string, rows: Set<number>, options?: { emptyMessage?: string }) => {
       if (!config || !currentAoa) return;
-      const built = buildSelectedDataRows(currentAoa, selectedRows);
+      const built = buildSelectedDataRows(currentAoa, rows);
       if (!built) {
-        push("请先勾选行");
+        push(options?.emptyMessage ?? "请先勾选行");
         return;
       }
       const currentSource = getCurrentTableSource(activeView, config) ?? "item";
@@ -3360,7 +3646,7 @@ export default function App() {
       if (tpl.source === "item") {
         const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
         const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-        const newItems = buildSendItemsFromSelection(currentAoa, selectedRows, itemLineQty, ridx);
+        const newItems = buildSendItemsFromSelection(currentAoa, rows, itemLineQty, ridx);
         nextItems = mergeSendTemplateItems([...tpl.items, ...newItems]);
       }
       const list = config.savedTemplates.map((t) =>
@@ -3370,8 +3656,43 @@ export default function App() {
       clearRowSelection();
       push(`已追加到模板「${tpl.title}」（${built.idxs.length} 行）`);
     },
-    [config, currentAoa, activeView, selectedRows, itemLineQty, push, persist, clearRowSelection],
+    [config, currentAoa, activeView, itemLineQty, push, persist, clearRowSelection],
   );
+
+  const appendSelectedRowsToTemplate = useCallback(
+    async (templateId: string) => {
+      closeCtx();
+      await appendRowsToTemplate(templateId, selectedRows);
+    },
+    [appendRowsToTemplate, selectedRows],
+  );
+
+  const currentTableSource = useMemo(
+    () => (config ? getCurrentTableSource(activeView, config) : null),
+    [config, activeView],
+  );
+
+  const cancelBoxSelect = useCallback(() => {
+    boxSelectRef.current = null;
+    setBoxSelect(null);
+  }, []);
+
+  const {
+    onRowPointerDown: onTableRowTemplateDragPointerDown,
+    dragOverlay: tableRowDragOverlay,
+    hoverTemplateId: templateDropHoverId,
+    rejectTemplateId: templateDropRejectId,
+    isRowTemplateDragging,
+  } = useTableRowToTemplateDrag({
+    enabled: Boolean(currentAoa) && currentTableSource != null && !filterSheetOpen,
+    tableSource: currentTableSource,
+    selectedRows,
+    currentAoa,
+    boxSelectRef,
+    onCancelBoxSelect: cancelBoxSelect,
+    onDrop: (templateId, rows) =>
+      appendRowsToTemplate(templateId, rows, { emptyMessage: "无法追加该行" }),
+  });
 
   const completeNextSelectedTask = useCallback(async () => {
     if (!config || !currentAoa) return;
@@ -4028,7 +4349,7 @@ export default function App() {
 
   return (
     <div
-      className={`app${isItemTableView ? " app--item-filter-bar" : ""}${isTaskTableView ? " app--task-filter-bar" : ""}`}
+      className={`app${isItemTableView ? " app--item-filter-bar" : ""}${isTaskTableView ? " app--task-filter-bar" : ""}${isRowTemplateDragging ? " app--row-template-dragging" : ""}`}
     >
       {wizardOpen ? <Wizard /> : null}
       {appUpdater.offer ? (
@@ -4041,6 +4362,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onPersist={persist}
           onPurgeRecycledTemplate={(id) => void purgeRecycledTemplate(id)}
+          onRestoreRecycledTemplate={(id) => void restoreRecycledTemplate(id)}
           onLoadExcelData={(next) => void loadExcelData(next)}
           gtopLoggedIn={gtopLoggedIn}
           onOpenGtopLogin={() => void openGtopLoginWindow()}
@@ -4289,6 +4611,15 @@ export default function App() {
         onSaveLastForm={saveGlobalSendLastForm}
         onSubmit={(payload) => void submitGlobalSend(payload)}
       />
+      <ModifyItemPriceModal
+        open={itemPriceModal != null}
+        itemId={itemPriceModal?.itemId ?? ""}
+        initialBaseValue={itemPriceModal?.baseValue ?? ""}
+        initialStdPrice={itemPriceModal?.stdPrice ?? ""}
+        submitting={itemPriceSubmitting}
+        onClose={() => !itemPriceSubmitting && setItemPriceModal(null)}
+        onSubmit={(payload) => void submitItemPriceModal(payload)}
+      />
       {itemFilterModalOpen && config ? (
         <div className="modal-back modal-filter-back" onMouseDown={() => dismissItemFilterModal()}>
           <div className="modal modal-item-filter modal-filter-sheet" onMouseDown={(e) => e.stopPropagation()}>
@@ -4343,7 +4674,7 @@ export default function App() {
                 </div>
               </div>
               <p className="help modal-filter-help">
-                选项随当前表格数据更新。三列条件之间为「且」；类型备注、物品品质同列多选为「或」；自定义筛选同列多选为「且」。顶栏第一行可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中（与类型备注等为且）。防护值：「无」指单元格为空；「范围内」指可解析为数字且在区间内（可只填最小或最大）。
+                选项随当前表格数据更新。各区块条件之间为「且」；类型、物品品质同列多选为「或」；自定义筛选同列多选为「且」。顶栏第一行可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中（与类型等为且）。防护值：「无」指单元格为空；「范围内」指可解析为数字且在区间内（可只填最小或最大）。类型区块内「赛季物品」：列值为 **1** 表示赛季物品。
               </p>
               <FilterSectionDnDList<ItemFilterSectionId>
                 order={itemFilterSectionOrder}
@@ -4352,13 +4683,13 @@ export default function App() {
                 renderSection={(id) => {
                   if (id === "typeRemark") {
                     const typeRemarkSectionDisabled =
-                      itemFilterColIdx.tr < 0 && itemFilterColIdx.remark < 0;
+                      itemFilterColIdx.tr < 0 && itemFilterColIdx.remark < 0 && itemFilterColIdx.season < 0;
                     const typeRemarkOnlyEmote =
                       itemFilterColIdx.tr < 0 && itemFilterColIdx.remark >= 0;
                     return (
                       <div className={`item-filter-section item-filter-section--grow${typeRemarkSectionDisabled ? " item-filter-section--disabled" : ""}`}>
                         <div className="item-filter-h3-row">
-                          <h3 className="item-filter-h3">类型备注</h3>
+                          <h3 className="item-filter-h3">类型</h3>
                           {itemFilterColIdx.tr >= 0 ? (
                             <button
                               type="button"
@@ -4370,7 +4701,7 @@ export default function App() {
                           ) : null}
                         </div>
                         {typeRemarkSectionDisabled ? (
-                          <p className="help muted">当前表无「类型备注」与「备注」列，该条件不可用。</p>
+                          <p className="help muted">当前表无「类型备注」「备注」与「赛季物品」列，该条件不可用。</p>
                         ) : (
                           <>
                             {typeRemarkOnlyEmote ? (
@@ -4378,24 +4709,40 @@ export default function App() {
                                 当前表无「类型备注」列，仅可使用预设 Emote（按「备注」列筛选）。
                               </p>
                             ) : null}
-                            <p className="help muted" style={{ marginBottom: "0.35rem" }}>
-                              预设「Emote」按「备注」列匹配：保留「动作名+Emote」（如秀肌肉Emote、贵族礼仪Emote）；排除含「大红检视」的 Emote（如大红检视Emote…）。其它选项仍按「类型备注」列。
-                            </p>
-                            <div ref={itemFilterTypeRemarkScrollRef} className="item-filter-section-grid-wrap">
-                              <FilterOptionGrid
-                                items={itemTypeRemarkDisplayKeys}
-                                selectedKeys={itemFilterDraft.typeRemarkKeys}
-                                labelPrefix={typeRemarkLabelPrefix}
-                                onToggle={(opt) =>
-                                  setItemFilterDraft((d) => {
-                                    const s = new Set(d.typeRemarkKeys);
-                                    if (s.has(opt)) s.delete(opt);
-                                    else s.add(opt);
-                                    return { ...d, typeRemarkKeys: [...s] };
-                                  })
-                                }
-                              />
-                            </div>
+                            {itemFilterColIdx.tr >= 0 || itemFilterColIdx.remark >= 0 ? (
+                              <p className="help muted" style={{ marginBottom: "0.35rem" }}>
+                                预设「Emote」按「备注」列匹配：保留「动作名+Emote」（如秀肌肉Emote、贵族礼仪Emote）；排除含「大红检视」的 Emote（如大红检视Emote…）。其它选项仍按「类型备注」列。
+                              </p>
+                            ) : null}
+                            {itemFilterColIdx.tr >= 0 || itemFilterColIdx.remark >= 0 ? (
+                              <div ref={itemFilterTypeRemarkScrollRef} className="item-filter-section-grid-wrap">
+                                <FilterOptionGrid
+                                  items={itemTypeRemarkDisplayKeys}
+                                  selectedKeys={itemFilterDraft.typeRemarkKeys}
+                                  labelPrefix={typeRemarkLabelPrefix}
+                                  onToggle={(opt) =>
+                                    setItemFilterDraft((d) => {
+                                      const s = new Set(d.typeRemarkKeys);
+                                      if (s.has(opt)) s.delete(opt);
+                                      else s.add(opt);
+                                      return { ...d, typeRemarkKeys: [...s] };
+                                    })
+                                  }
+                                />
+                              </div>
+                            ) : null}
+                            {itemFilterColIdx.season >= 0 ? (
+                              <label className="item-filter-row item-filter-row--large" style={{ marginTop: "0.5rem" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(itemFilterDraft.seasonItemOnly)}
+                                  onChange={(e) =>
+                                    setItemFilterDraft((d) => ({ ...d, seasonItemOnly: e.target.checked }))
+                                  }
+                                />
+                                <span>赛季物品</span>
+                              </label>
+                            ) : null}
                           </>
                         )}
                       </div>
@@ -4850,6 +5197,8 @@ export default function App() {
             void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
           }
           onCloseMenus={() => closeCtx()}
+          templateDropHoverId={templateDropHoverId}
+          templateDropRejectId={templateDropRejectId}
         />
         <div className="main-column">
           {isItemTableView && config ? (
@@ -4876,7 +5225,7 @@ export default function App() {
               onRemoveCustomKeyword={removeItemCustomKeyword}
               onClearCustomKeywords={clearItemFilterCustomKeywords}
               customKeywordClearDisabled={activeItemFilterForChip.customKeywordKeys.length === 0}
-              typeRemarkSelected={activeItemFilterForChip.typeRemarkKeys}
+              typeRemarkSelected={chipTypeRemarkSelectedKeys}
               qualitySelected={activeItemFilterForChip.qualityKeys}
               typeRemarkPinned={[...chipTypeRemarkPinned]}
               typeRemarkMore={chipTypeRemarkMore}
@@ -4884,7 +5233,7 @@ export default function App() {
               onReorderTypeRemark={(orderedKeys) =>
                 updateItemFilterPersist((d) => ({
                   ...d,
-                  chipBarTypeRemarkOrder: sanitizeChipBarOrder(orderedKeys, itemTypeRemarkAllKeys),
+                  chipBarTypeRemarkOrder: sanitizeChipBarOrder(orderedKeys, chipTypeRemarkBarValidKeys),
                 }))
               }
               onDemoteTypeRemark={(key) =>
@@ -4892,7 +5241,7 @@ export default function App() {
                   ...d,
                   chipBarTypeRemarkOrder: sanitizeChipBarOrder(
                     chipTypeRemarkPinned.filter((k) => k !== key),
-                    itemTypeRemarkAllKeys,
+                    chipTypeRemarkBarValidKeys,
                   ),
                 }))
               }
@@ -4908,11 +5257,15 @@ export default function App() {
               showEmotePin={itemFilterColIdx.remark >= 0}
               showTypeRemarkPins={itemFilterColIdx.tr >= 0}
               showQualityRow={itemFilterColIdx.qual >= 0}
-              onToggleTypeRemark={toggleItemFilterTypeRemarkKey}
+              showSeasonRow={itemFilterColIdx.season >= 0}
+              onToggleTypeRemark={toggleItemFilterTypeRemarkChip}
               onToggleQuality={toggleItemFilterQualityKey}
               onClearTypeRemark={clearItemFilterTypeRemark}
               onClearQuality={clearItemFilterQuality}
-              typeRemarkClearDisabled={activeItemFilterForChip.typeRemarkKeys.length === 0}
+              typeRemarkClearDisabled={
+                activeItemFilterForChip.typeRemarkKeys.length === 0 &&
+                !activeItemFilterForChip.seasonItemOnly
+              }
               qualityClearDisabled={activeItemFilterForChip.qualityKeys.length === 0}
               typeRemarkLabelPrefix={typeRemarkLabelPrefix}
             />
@@ -5023,13 +5376,9 @@ export default function App() {
           ) : (
             <>
               <div
-                className="table-wrap"
+                className="table-scroll-y"
                 ref={tableScrollRef}
                 onContextMenu={onTableContextMenu}
-                onPointerDown={beginBoxSelect}
-                onPointerMove={updateBoxSelect}
-                onPointerUp={commitBoxSelect}
-                onPointerCancel={cancelBoxSelect}
               >
               <div className="table-selection-meta-bar" ref={tableMetaBarRef} role="status">
                 <div className="table-selection-meta-inner">
@@ -5040,23 +5389,19 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn-tiny"
-                      disabled={visibleDataIdxs.length === 0}
+                      disabled={selectableVisibleDataIdxs.length === 0}
                       onClick={() => toggleSelectAllVisible()}
                       aria-label={
-                        visibleDataIdxs.length > 0
-                          ? allVisibleSelected
-                            ? `取消全选当前 ${visibleDataIdxs.length} 行`
-                            : someVisibleSelected
-                              ? `全选当前 ${visibleDataIdxs.length} 行（已选 ${visibleSelectedCount}）`
-                              : `全选当前 ${visibleDataIdxs.length} 行`
+                        selectableVisibleDataIdxs.length > 0
+                          ? someVisibleSelected
+                            ? `取消勾选当前可见行（已选 ${visibleSelectedCount}/${selectableVisibleDataIdxs.length}）`
+                            : `全选当前 ${selectableVisibleDataIdxs.length} 行`
                           : "全选"
                       }
                     >
-                      {allVisibleSelected
-                        ? `取消全选（${visibleDataIdxs.length}）`
-                        : someVisibleSelected
-                          ? `全选（${visibleSelectedCount}/${visibleDataIdxs.length}）`
-                          : `全选（${visibleDataIdxs.length}）`}
+                      {someVisibleSelected
+                        ? `取消勾选（${visibleSelectedCount}/${selectableVisibleDataIdxs.length}）`
+                        : `全选（${selectableVisibleDataIdxs.length}）`}
                     </button>
                     <button
                       type="button"
@@ -5084,7 +5429,22 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <table ref={tableDataRef} className={`data${isItemTableView ? " data-item-qty" : ""}`}>
+              <div className="table-scroll-viewport">
+              <div
+                className="table-scroll-body"
+                ref={tableScrollBodyRef}
+                onPointerDown={beginBoxSelect}
+                onWheel={onTableBodyWheel}
+              >
+                <div
+                  className="table-scroll-content"
+                  ref={tableScrollContentRef}
+                  style={{ marginLeft: -tableScrollLeft }}
+                >
+              <table
+                ref={tableDataRef}
+                className={`data${isItemTableView ? " data-item-qty" : ""}${freezeVisIdx >= 0 ? " data-col-freeze" : ""}`}
+              >
                 <thead>
                   <tr>
                     <th className="row-check">
@@ -5092,19 +5452,33 @@ export default function App() {
                         <input
                           ref={selectAllCheckboxRef}
                           type="checkbox"
-                          disabled={visibleDataIdxs.length === 0}
+                          disabled={selectableVisibleDataIdxs.length === 0}
                           checked={allVisibleSelected}
-                          onChange={() => toggleSelectAllVisible()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            toggleSelectAllVisible();
+                          }}
                           aria-label={
-                            visibleDataIdxs.length > 0
-                              ? `全选当前 ${visibleDataIdxs.length} 行`
+                            selectableVisibleDataIdxs.length > 0
+                              ? someVisibleSelected
+                                ? `取消勾选当前可见行（已选 ${visibleSelectedCount}/${selectableVisibleDataIdxs.length}）`
+                                : `全选当前 ${selectableVisibleDataIdxs.length} 行`
                               : "全选"
                           }
                         />
                         {isItemTableView ? <span className="item-qty-header-gap" aria-hidden /> : null}
                       </div>
                     </th>
-                    <th className="row-num">#</th>
+                    <th
+                      className="row-num"
+                      style={
+                        freezeVisIdx >= 0 && stickyCellLeftPx.length > 1
+                          ? { left: stickyCellLeftPx[1] }
+                          : undefined
+                      }
+                    >
+                      #
+                    </th>
                     {visibleColIndices.map((ci, visIdx) => {
                       const name = headers[ci] ?? "";
                       const cellIdx = 2 + visIdx;
@@ -5185,7 +5559,7 @@ export default function App() {
                   </tr>
                 </thead>
                 <DataTableBody
-                  scrollRef={tableScrollRef}
+                  scrollRef={tableScrollBodyRef}
                   rows={displayBodyRows}
                   visibleColIndices={visibleColIndices}
                   isItemTableView={isItemTableView}
@@ -5195,28 +5569,36 @@ export default function App() {
                   stickyCellLeftPx={stickyCellLeftPx}
                   onToggleRow={toggleRow}
                   onBumpItemLineQty={bumpItemLineQty}
+                  onSetItemLineQty={setItemLineQtyDirect}
+                  showItemTypeInTable={Boolean(config?.showItemTypeInTable)}
+                  itemIdColIndex={itemIdColIndex}
+                  itemTypeColIndex={itemTypeColIndex}
+                  itemSubTypeColIndex={itemSubTypeColIndex}
+                  itemTypeLookupIndex={itemTypeLookupIndex}
+                  rowTemplateDragEnabled={currentTableSource != null && !filterSheetOpen}
+                  onRowPointerDown={onTableRowTemplateDragPointerDown}
                 />
               </table>
-              {boxSelect && tableScrollRef.current
-                ? (() => {
-                    const wrap = tableScrollRef.current!;
-                    const r = wrap.getBoundingClientRect();
-                    const style = boxSelectOverlayStyle(boxSelect, r, wrap.scrollLeft, wrap.scrollTop);
-                    return (
-                      <div
-                        className="table-box-select-rect"
-                        style={{
-                          left: style.left,
-                          top: style.top,
-                          width: style.width,
-                          height: style.height,
-                        }}
-                        aria-hidden
-                      />
-                    );
-                  })()
-                : null}
+                </div>
+              </div>
+              <div
+                className={`table-scroll-x-bar${tableHasHorizontalOverflow ? " table-scroll-x-bar--active" : ""}`}
+                ref={tableScrollXBarRef}
+                onScroll={onHorizontalBarScroll}
+                aria-hidden
+              >
+                <div className="table-scroll-x-spacer" ref={tableScrollSpacerRef} />
+              </div>
+              </div>
             </div>
+            {boxSelect ? (
+              <div
+                className="table-box-select-rect"
+                style={boxSelectOverlayStyleFixed(boxSelect)}
+                aria-hidden
+              />
+            ) : null}
+            {tableRowDragOverlay}
             <button
               type="button"
               className="table-scroll-top-fab"
@@ -5246,12 +5628,31 @@ export default function App() {
           style={{ left: (ctxMenuPos ?? ctxMenu).x, top: (ctxMenuPos ?? ctxMenu).y }}
           onClick={(e) => e.stopPropagation()}
         >
-          {ctxMenu.dataIdx != null && (isItemTableView || isTaskTableView) ? (
-            <button type="button" onClick={() => void copyContextRowId()}>
-              {isItemTableView ? "复制物品 ID" : "复制任务 ID"}
-            </button>
+          {ctxMenu.dataIdx != null && isItemTableView ? (
+            <>
+              <button type="button" className="context-menu-item" onClick={() => void openItemPriceModalFromContext()}>
+                修改价格…
+              </button>
+              <button
+                type="button"
+                className="context-menu-item"
+                disabled={restoreItemPriceBusy}
+                onClick={() => void restoreItemDefaultPricesFromContext()}
+              >
+                {restoreItemPriceBusy ? "还原中…" : "还原默认价格"}
+              </button>
+              <div role="separator" className="context-menu-sep" />
+            </>
           ) : null}
-          <button type="button" onClick={() => openTemplateNameModal()}>
+          {ctxMenu.dataIdx != null && (isItemTableView || isTaskTableView) ? (
+            <>
+              <button type="button" className="context-menu-item" onClick={() => void copyContextRowId()}>
+                {isItemTableView ? "复制物品 ID" : "复制任务 ID"}
+              </button>
+              <div role="separator" className="context-menu-sep" />
+            </>
+          ) : null}
+          <button type="button" className="context-menu-item" onClick={() => openTemplateNameModal()}>
             保存为模板
           </button>
           {selectedRows.size > 0
@@ -5266,6 +5667,7 @@ export default function App() {
                       <button
                         key={t.id}
                         type="button"
+                        className="context-menu-item"
                         title={t.title}
                         onClick={() => void appendSelectedRowsToTemplate(t.id)}
                       >
@@ -5275,7 +5677,8 @@ export default function App() {
                   });
               })()
             : null}
-          <button type="button" onClick={() => void goGmtExecute()}>
+          <div role="separator" className="context-menu-sep" />
+          <button type="button" className="context-menu-item" onClick={() => void goGmtExecute()}>
             {(() => {
               const src =
                 activeView.kind === "item"
@@ -5293,6 +5696,7 @@ export default function App() {
           {isTaskTableView && selectedRows.size > 0 ? (
             <button
               type="button"
+              className="context-menu-item"
               onClick={() => {
                 closeCtx();
                 void acceptSelectedTasksViaGtop();
@@ -5304,7 +5708,7 @@ export default function App() {
           {selectedRows.size > 0 &&
           itemServerWideUi.entriesEnabled &&
           getCurrentTableSource(activeView, config) === "item" ? (
-            <button type="button" onClick={() => void openGlobalSendFromTableContext()}>
+            <button type="button" className="context-menu-item" onClick={() => void openGlobalSendFromTableContext()}>
               全服发送
             </button>
           ) : null}
@@ -5321,10 +5725,10 @@ export default function App() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>
+          <button type="button" className="context-menu-item" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>
             冻结此列
           </button>
-          <button type="button" onClick={() => void applyFreezeThrough(null)}>
+          <button type="button" className="context-menu-item" onClick={() => void applyFreezeThrough(null)}>
             取消冻结
           </button>
         </div>

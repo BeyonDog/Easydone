@@ -80,6 +80,10 @@ function serializeCsvLine(fields: string[], delimiter: "," | "\t"): string {
   return fields.map((f) => escapeCsvField(f, delimiter)).join(delimiter);
 }
 
+export function serializeParsedCsv(parsed: ParsedTaskCsv): string {
+  return parsed.rows.map((r) => serializeCsvLine(r, parsed.delimiter)).join("\n");
+}
+
 export function parseTaskCsv(text: string): ParsedTaskCsv {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const lines = normalized.split("\n").filter((line, idx, arr) => {
@@ -132,6 +136,6 @@ export function patchTaskCsvClearPreTaskIds(csvText: string, taskIds: Set<string
     return padded;
   });
 
-  const text = outRows.map((r) => serializeCsvLine(r, delimiter)).join("\n");
+  const text = serializeParsedCsv({ delimiter, rows: outRows });
   return { ok: true, text, clearedCount };
 }

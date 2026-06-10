@@ -210,6 +210,43 @@ pub async fn gtop_fetch_region_servers(
 }
 
 #[tauri::command]
+pub async fn gtop_fetch_item_csv_file_path(
+    base_url: String,
+    cookie: String,
+    project: String,
+    env_id: String,
+) -> Result<String, String> {
+    let base = normalize_base_url(&base_url);
+    let url = format!(
+        "{base}/api/p4Config/content/getByEnvAndFilenames?env_id={}&filenames=Item.csv",
+        urlencoding::encode(env_id.trim())
+    );
+    let client = client()?;
+    let headers = build_gtop_headers(&cookie, &project)?;
+    let resp = client
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("HTTP {status}: {text}"));
+    }
+    let root: Value = serde_json::from_str(&text).map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let path = root
+        .get("data")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "未返回 Item.csv 上传路径".to_string())?;
+    Ok(path)
+}
+
+#[tauri::command]
 pub async fn gtop_fetch_task_csv_file_path(
     base_url: String,
     cookie: String,
@@ -244,6 +281,58 @@ pub async fn gtop_fetch_task_csv_file_path(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "未返回 Task.csv 上传路径".to_string())?;
     Ok(path)
+}
+
+#[tauri::command]
+pub async fn gtop_upload_item_csv(
+    base_url: String,
+    cookie: String,
+    project: String,
+    env_id: String,
+    region_server_id: String,
+    file_path: String,
+    csv_file_path: String,
+) -> Result<GtopUploadResult, String> {
+    let bytes = std::fs::read(&csv_file_path).map_err(|e| format!("读取临时 CSV 失败: {e}"))?;
+    let base = normalize_base_url(&base_url);
+    let url = format!("{base}/api/regionServer/task/file/upload");
+    let client = client()?;
+    let headers = build_gtop_headers(&cookie, &project)?;
+    let part = Part::bytes(bytes)
+        .file_name("Item.csv")
+        .mime_str("text/csv")
+        .map_err(|e| e.to_string())?;
+    let form = Form::new()
+        .part("file", part)
+        .text("region_server_ids", region_server_id.trim().to_string())
+        .text("env_id", env_id.trim().to_string())
+        .text("permission_tag", "area:manage:upload")
+        .text("file_paths", file_path.trim().to_string());
+    let resp = client
+        .post(&url)
+        .headers(headers)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("上传失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Ok(GtopUploadResult {
+            ok: false,
+            message: format!("HTTP {status}: {text}"),
+        });
+    }
+    Ok(GtopUploadResult {
+        ok: true,
+        message: if text.len() > 200 {
+            format!("上传成功（{} 字节响应）", text.len())
+        } else if text.trim().is_empty() {
+            "上传成功".into()
+        } else {
+            text
+        },
+    })
 }
 
 #[tauri::command]
@@ -300,6 +389,19 @@ pub async fn gtop_upload_task_csv(
 
 #[tauri::command]
 pub fn gtop_make_temp_task_csv(app: AppHandle, patched_utf8: String) -> Result<String, String> {
+    gtop_make_temp_named_csv(app, patched_utf8, "Task")
+}
+
+#[tauri::command]
+pub fn gtop_make_temp_item_csv(app: AppHandle, patched_utf8: String) -> Result<String, String> {
+    gtop_make_temp_named_csv(app, patched_utf8, "Item")
+}
+
+fn gtop_make_temp_named_csv(
+    app: AppHandle,
+    patched_utf8: String,
+    prefix: &str,
+) -> Result<String, String> {
     let cache = app
         .path()
         .app_cache_dir()
@@ -307,7 +409,7 @@ pub fn gtop_make_temp_task_csv(app: AppHandle, patched_utf8: String) -> Result<S
     let dir = cache.join("gtop-upload");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let name = format!(
-        "Task_{}.csv",
+        "{prefix}_{}.csv",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())

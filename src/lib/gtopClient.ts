@@ -56,6 +56,18 @@ export async function gtopFetchTaskCsvFilePath(
   });
 }
 
+export async function gtopFetchItemCsvFilePath(
+  slice: GtopSessionSlice,
+  envId: string,
+): Promise<string> {
+  return invoke("gtop_fetch_item_csv_file_path", {
+    baseUrl: slice.gtopBaseUrl.trim() || DEFAULT_GTOP_BASE_URL,
+    cookie: slice.gtopCookie,
+    project: slice.gtopProject.trim() || DEFAULT_GTOP_PROJECT,
+    envId,
+  });
+}
+
 export async function gtopUploadTaskCsv(args: {
   slice: GtopSessionSlice;
   envId: string;
@@ -76,6 +88,28 @@ export async function gtopUploadTaskCsv(args: {
 
 export async function gtopMakeTempTaskCsv(patchedUtf8: string): Promise<string> {
   return invoke("gtop_make_temp_task_csv", { patchedUtf8 });
+}
+
+export async function gtopUploadItemCsv(args: {
+  slice: GtopSessionSlice;
+  envId: string;
+  regionServerId: string;
+  filePath: string;
+  csvFilePath: string;
+}): Promise<GtopUploadResult> {
+  return invoke("gtop_upload_item_csv", {
+    baseUrl: args.slice.gtopBaseUrl.trim() || DEFAULT_GTOP_BASE_URL,
+    cookie: args.slice.gtopCookie,
+    project: args.slice.gtopProject.trim() || DEFAULT_GTOP_PROJECT,
+    envId: args.envId,
+    regionServerId: args.regionServerId,
+    filePath: args.filePath,
+    csvFilePath: args.csvFilePath,
+  });
+}
+
+export async function gtopMakeTempItemCsv(patchedUtf8: string): Promise<string> {
+  return invoke("gtop_make_temp_item_csv", { patchedUtf8 });
 }
 
 export async function gtopOpenLoginWindow(baseUrl: string): Promise<void> {
