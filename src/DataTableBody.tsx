@@ -1,9 +1,15 @@
-import React, { memo, useEffect, useState } from "react";
+import React, { memo, useEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { ItemValueSlider } from "./ItemValueSlider.tsx";
+import {
+  TABLE_ROW_HEIGHT_ESTIMATE,
+  estimateDataTableRowHeight,
+} from "./lib/dataTableRowHeight.ts";
+import { ITEM_WEAR_MAX, ITEM_WEAR_MIN } from "./lib/itemWearValue.ts";
 import { cellStr } from "./lib/xlsxHelpers";
 import { formatItemIdWithTypeLabel, type ItemTypeLookupIndex } from "./lib/itemTypeLookup.ts";
 
-export const TABLE_ROW_HEIGHT_ESTIMATE = 30;
+export { TABLE_ROW_HEIGHT_ESTIMATE } from "./lib/dataTableRowHeight.ts";
 
 export type DisplayBodyRow = { row: unknown[]; dataIdx: number };
 
@@ -14,11 +20,21 @@ export type DataTableBodyProps = {
   isItemTableView: boolean;
   selectedRows: Set<number>;
   itemLineQty: Record<number, number>;
+  defaultWearValue: number;
+  itemLineWear: Record<number, number>;
+  wearRowOverride: Set<number>;
+  itemLineDurability: Record<number, number>;
+  durabilityRowOverride: Set<number>;
+  rowSupportsWear: (row: unknown[]) => boolean;
+  rowSupportsDurability: (row: unknown[]) => boolean;
+  rowDurabilityMax: (row: unknown[]) => number;
   freezeVisIdx: number;
   stickyCellLeftPx: number[];
   onToggleRow: (dataIdx: number) => void;
   onBumpItemLineQty: (dataIdx: number, sign: 1 | -1) => void;
   onSetItemLineQty: (dataIdx: number, raw: string) => void;
+  onSetItemLineWearValue: (dataIdx: number, value: number) => void;
+  onSetItemLineDurabilityValue: (dataIdx: number, value: number) => void;
   showItemTypeInTable: boolean;
   itemIdColIndex: number;
   itemTypeColIndex: number;
@@ -36,11 +52,18 @@ type DataTableRowProps = {
   isItemTableView: boolean;
   isSelected: boolean;
   qty: number;
+  wear: number;
+  durability: number;
+  durabilityMax: number;
+  showWearInput: boolean;
+  showDurabilityInput: boolean;
   freezeVisIdx: number;
   stickyCellLeftPx: number[];
   onToggleRow: (dataIdx: number) => void;
   onBumpItemLineQty: (dataIdx: number, sign: 1 | -1) => void;
   onSetItemLineQty: (dataIdx: number, raw: string) => void;
+  onSetItemLineWearValue: (dataIdx: number, value: number) => void;
+  onSetItemLineDurabilityValue: (dataIdx: number, value: number) => void;
   showItemTypeInTable: boolean;
   itemIdColIndex: number;
   itemTypeColIndex: number;
@@ -58,11 +81,18 @@ const DataTableRow = memo(function DataTableRow({
   isItemTableView,
   isSelected,
   qty,
+  wear,
+  durability,
+  durabilityMax,
+  showWearInput,
+  showDurabilityInput,
   freezeVisIdx,
   stickyCellLeftPx,
   onToggleRow,
   onBumpItemLineQty,
   onSetItemLineQty,
+  onSetItemLineWearValue,
+  onSetItemLineDurabilityValue,
   showItemTypeInTable,
   itemIdColIndex,
   itemTypeColIndex,
@@ -71,12 +101,7 @@ const DataTableRow = memo(function DataTableRow({
   rowTemplateDragEnabled,
   onRowPointerDown,
 }: DataTableRowProps) {
-  const [qtyDraft, setQtyDraft] = useState<string | null>(null);
-
-  const commitQtyDraft = (raw: string) => {
-    onSetItemLineQty(dataIdx, raw);
-    setQtyDraft(null);
-  };
+  const showValueInput = showWearInput || showDurabilityInput;
 
   return (
     <tr
@@ -89,64 +114,50 @@ const DataTableRow = memo(function DataTableRow({
       }
     >
       <td className="row-check">
-        <div className="row-check-inner">
-          <input type="checkbox" checked={isSelected} onChange={() => onToggleRow(dataIdx)} />
+        <div
+          className={`row-check-inner${showValueInput && isSelected ? " row-check-inner--wear" : ""}`}
+        >
+          <input
+            type="checkbox"
+            className="row-check-checkbox"
+            checked={isSelected}
+            onChange={() => onToggleRow(dataIdx)}
+          />
           {isItemTableView ? (
-            <div className={`row-check-qty${isSelected ? "" : " row-check-qty--hidden"}`} aria-hidden={!isSelected}>
-              <button
-                type="button"
-                className="item-qty-btn"
-                aria-label="减少数量"
-                tabIndex={isSelected ? 0 : -1}
-                disabled={!isSelected}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBumpItemLineQty(dataIdx, -1);
-                }}
-              >
-                −
-              </button>
-              <input
-                type="text"
-                inputMode="numeric"
-                className="item-qty-input"
-                value={qtyDraft !== null ? qtyDraft : String(qty)}
-                disabled={!isSelected}
-                tabIndex={isSelected ? 0 : -1}
-                aria-label="数量"
-                onFocus={(e) => {
-                  setQtyDraft(String(qty));
-                  e.currentTarget.select();
-                }}
-                onChange={(e) => {
-                  setQtyDraft(e.target.value.replace(/\D/g, ""));
-                }}
-                onBlur={(e) => {
-                  commitQtyDraft(qtyDraft ?? e.target.value);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.currentTarget.blur();
-                  }
-                }}
-                onClick={(e) => e.stopPropagation()}
-                onPointerDown={(e) => e.stopPropagation()}
+            <>
+              <QtyStepper
+                dataIdx={dataIdx}
+                qty={qty}
+                isSelected={isSelected}
+                showValueInput={showValueInput}
+                onBumpItemLineQty={onBumpItemLineQty}
+                onSetItemLineQty={onSetItemLineQty}
               />
-              <button
-                type="button"
-                className="item-qty-btn"
-                aria-label="增加数量"
-                tabIndex={isSelected ? 0 : -1}
-                disabled={!isSelected}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onBumpItemLineQty(dataIdx, 1);
-                }}
-              >
-                +
-              </button>
-            </div>
+              {showWearInput && isSelected ? (
+                <ItemValueSlider
+                  value={wear}
+                  min={ITEM_WEAR_MIN}
+                  max={ITEM_WEAR_MAX}
+                  compact
+                  label="耐"
+                  disabled={!isSelected}
+                  rangeHint="0–100"
+                  onChange={(n) => onSetItemLineWearValue(dataIdx, n)}
+                />
+              ) : null}
+              {showDurabilityInput && isSelected ? (
+                <ItemValueSlider
+                  value={durability}
+                  min={0}
+                  max={durabilityMax}
+                  compact
+                  label="耐"
+                  disabled={!isSelected}
+                  rangeHint={`0–${durabilityMax}`}
+                  onChange={(n) => onSetItemLineDurabilityValue(dataIdx, n)}
+                />
+              ) : null}
+            </>
           ) : null}
         </div>
       </td>
@@ -186,6 +197,91 @@ const DataTableRow = memo(function DataTableRow({
   );
 });
 
+function QtyStepper({
+  dataIdx,
+  qty,
+  isSelected,
+  showValueInput,
+  onBumpItemLineQty,
+  onSetItemLineQty,
+}: {
+  dataIdx: number;
+  qty: number;
+  isSelected: boolean;
+  showValueInput: boolean;
+  onBumpItemLineQty: (dataIdx: number, sign: 1 | -1) => void;
+  onSetItemLineQty: (dataIdx: number, raw: string) => void;
+}) {
+  const [qtyDraft, setQtyDraft] = React.useState<string | null>(null);
+
+  const commitQtyDraft = (raw: string) => {
+    onSetItemLineQty(dataIdx, raw);
+    setQtyDraft(null);
+  };
+
+  return (
+    <div
+      className={`row-check-stepper row-check-qty${showValueInput ? "" : " row-check-stepper--no-label"}${isSelected ? "" : " row-check-qty--hidden"}`}
+      aria-hidden={!isSelected}
+    >
+      {showValueInput ? <span className="row-check-stepper-label" aria-hidden="true" /> : null}
+      <button
+        type="button"
+        className="item-qty-btn"
+        aria-label="减少数量"
+        tabIndex={isSelected ? 0 : -1}
+        disabled={!isSelected}
+        onClick={(e) => {
+          e.stopPropagation();
+          onBumpItemLineQty(dataIdx, -1);
+        }}
+      >
+        −
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        className="item-qty-input"
+        value={qtyDraft !== null ? qtyDraft : String(qty)}
+        disabled={!isSelected}
+        tabIndex={isSelected ? 0 : -1}
+        aria-label="数量"
+        onFocus={(e) => {
+          setQtyDraft(String(qty));
+          e.currentTarget.select();
+        }}
+        onChange={(e) => {
+          setQtyDraft(e.target.value.replace(/\D/g, ""));
+        }}
+        onBlur={(e) => {
+          commitQtyDraft(qtyDraft ?? e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      />
+      <button
+        type="button"
+        className="item-qty-btn"
+        aria-label="增加数量"
+        tabIndex={isSelected ? 0 : -1}
+        disabled={!isSelected}
+        onClick={(e) => {
+          e.stopPropagation();
+          onBumpItemLineQty(dataIdx, 1);
+        }}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
 export function DataTableBody({
   scrollRef,
   rows,
@@ -193,11 +289,21 @@ export function DataTableBody({
   isItemTableView,
   selectedRows,
   itemLineQty,
+  defaultWearValue,
+  itemLineWear,
+  wearRowOverride,
+  itemLineDurability,
+  durabilityRowOverride,
+  rowSupportsWear,
+  rowSupportsDurability,
+  rowDurabilityMax,
   freezeVisIdx,
   stickyCellLeftPx,
   onToggleRow,
   onBumpItemLineQty,
   onSetItemLineQty,
+  onSetItemLineWearValue,
+  onSetItemLineDurabilityValue,
   showItemTypeInTable,
   itemIdColIndex,
   itemTypeColIndex,
@@ -209,14 +315,24 @@ export function DataTableBody({
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => TABLE_ROW_HEIGHT_ESTIMATE,
+    estimateSize: (index) => {
+      const entry = rows[index];
+      if (!entry) return TABLE_ROW_HEIGHT_ESTIMATE;
+      const { row, dataIdx } = entry;
+      const supportsValueInput =
+        isItemTableView && (rowSupportsWear(row) || rowSupportsDurability(row));
+      return estimateDataTableRowHeight({
+        isItemTableView,
+        isSelected: selectedRows.has(dataIdx),
+        supportsValueInput,
+      });
+    },
     overscan: 12,
   });
 
   useEffect(() => {
-    if (!isItemTableView) return;
     rowVirtualizer.measure();
-  }, [isItemTableView, selectedRows, rowVirtualizer]);
+  }, [isItemTableView, selectedRows, rows, rowVirtualizer]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const colSpan = 2 + visibleColIndices.length;
@@ -233,6 +349,16 @@ export function DataTableBody({
       ) : null}
       {virtualRows.map((virtualRow) => {
         const { row, dataIdx } = rows[virtualRow.index]!;
+        const isSelected = selectedRows.has(dataIdx);
+        const showWearInput = isItemTableView && rowSupportsWear(row);
+        const showDurabilityInput = isItemTableView && rowSupportsDurability(row);
+        const durMax = showDurabilityInput ? rowDurabilityMax(row) : 0;
+        const wear = wearRowOverride.has(dataIdx)
+          ? itemLineWear[dataIdx] ?? defaultWearValue
+          : defaultWearValue;
+        const durability = durabilityRowOverride.has(dataIdx)
+          ? itemLineDurability[dataIdx] ?? durMax
+          : durMax;
         return (
           <DataTableRow
             key={dataIdx}
@@ -241,13 +367,20 @@ export function DataTableBody({
             visualIdx={virtualRow.index}
             visibleColIndices={visibleColIndices}
             isItemTableView={isItemTableView}
-            isSelected={selectedRows.has(dataIdx)}
+            isSelected={isSelected}
             qty={itemLineQty[dataIdx] ?? 1}
+            wear={wear}
+            durability={durability}
+            durabilityMax={durMax}
+            showWearInput={showWearInput}
+            showDurabilityInput={showDurabilityInput}
             freezeVisIdx={freezeVisIdx}
             stickyCellLeftPx={stickyCellLeftPx}
             onToggleRow={onToggleRow}
             onBumpItemLineQty={onBumpItemLineQty}
             onSetItemLineQty={onSetItemLineQty}
+            onSetItemLineWearValue={onSetItemLineWearValue}
+            onSetItemLineDurabilityValue={onSetItemLineDurabilityValue}
             showItemTypeInTable={showItemTypeInTable}
             itemIdColIndex={itemIdColIndex}
             itemTypeColIndex={itemTypeColIndex}

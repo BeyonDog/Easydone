@@ -144,6 +144,13 @@ export function typeRemarkFilterKey(v: unknown): string {
 /** 道具筛选「类型备注」预设项：固定显示为 Emote */
 export const ITEM_TYPE_REMARK_PRESET_EMOTE = "Emote";
 
+/** 道具筛选「类型备注」预设项：试衣间皮肤（Type 100/200） */
+export const ITEM_TYPE_REMARK_PRESET_FITTING_ROOM = "试衣间皮肤";
+
+export const ITEM_TYPE_WEAPON_SKIN = 100;
+export const ITEM_TYPE_ARMOR_SKIN = 200;
+export const ITEM_SUBTYPE_ARMOR_SKIN = 2000000;
+
 const DA_HONG_JIAN_SHI = "大红检视";
 
 /** 去除零宽/BOM/NBSP，避免 Excel 复制导致子串匹配失败 */
@@ -173,6 +180,23 @@ export function rowMatchesEmotePreset(remarkCell: unknown): boolean {
   if (!s.includes("Emote")) return false;
   if (isDaHongJianShiEmoteTypeRemark(s)) return false;
   return true;
+}
+
+/** 试衣间皮肤：Type 100/200 或 SubType 2000000（防具皮肤） */
+export function rowMatchesFittingRoomSkinPreset(
+  row: unknown[],
+  typeCol: number,
+  subCol: number,
+): boolean {
+  if (typeCol >= 0) {
+    const t = parseCellAsInteger(row[typeCol]);
+    if (t === ITEM_TYPE_WEAPON_SKIN || t === ITEM_TYPE_ARMOR_SKIN) return true;
+  }
+  if (subCol >= 0) {
+    const sub = parseCellAsInteger(row[subCol]);
+    if (sub === ITEM_SUBTYPE_ARMOR_SKIN) return true;
+  }
+  return false;
 }
 
 /** 无防护值：null、空串、仅空白（数值 0 不算空） */

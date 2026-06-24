@@ -8,40 +8,42 @@ export function useClampedMenuPosition(
   contentKey?: string | number | null,
 ): { x: number; y: number } | null {
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const anchorX = anchor?.x ?? null;
+  const anchorY = anchor?.y ?? null;
 
   const applyClamp = useCallback(() => {
-    if (!anchor) {
+    if (anchorX == null || anchorY == null) {
       setPosition(null);
       return;
     }
     const el = menuRef.current;
     if (!el) {
-      setPosition({ x: anchor.x, y: anchor.y });
+      setPosition({ x: anchorX, y: anchorY });
       return;
     }
     const rect = el.getBoundingClientRect();
     setPosition(
       clampMenuPosition(
-        anchor.x,
-        anchor.y,
+        anchorX,
+        anchorY,
         rect.width,
         rect.height,
         window.innerWidth,
         window.innerHeight,
       ),
     );
-  }, [anchor, menuRef]);
+  }, [anchorX, anchorY, menuRef]);
 
   useLayoutEffect(() => {
-    if (!anchor) {
+    if (anchorX == null || anchorY == null) {
       setPosition(null);
       return;
     }
     applyClamp();
-  }, [anchor, applyClamp, contentKey]);
+  }, [anchorX, anchorY, applyClamp, contentKey]);
 
   useEffect(() => {
-    if (!anchor) return;
+    if (anchorX == null || anchorY == null) return;
     const onReflow = () => applyClamp();
     window.addEventListener("resize", onReflow);
     window.addEventListener("scroll", onReflow, true);
@@ -49,7 +51,7 @@ export function useClampedMenuPosition(
       window.removeEventListener("resize", onReflow);
       window.removeEventListener("scroll", onReflow, true);
     };
-  }, [anchor, applyClamp]);
+  }, [anchorX, anchorY, applyClamp]);
 
   return position;
 }

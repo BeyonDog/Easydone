@@ -2,8 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildAdminAddExpExecBody,
+  buildAdminClearTimeoutMatchInfoExecBody,
+  buildAddSproutScoreExecBody,
   buildAdminSendGlobalMailExecBody,
   buildAdminSendMailExecBody,
+  SPROUT_SCORE_ONE_CLICK_AMOUNT,
 } from "./gmtApi.contract.ts";
 
 describe("buildAdminAddExpExecBody", () => {
@@ -80,6 +83,53 @@ describe("buildAdminSendMailExecBody", () => {
     const body = buildAdminSendMailExecBody(baseInput);
     assert.equal((body.param as { env: string }).env, "rct01");
   });
+
+  it("sets init_wear_value when wearValue provided", () => {
+    const body = buildAdminSendMailExecBody({
+      ...baseInput,
+      rewardItems: [{ id: "101011", cnt: "1", wearValue: 37 }],
+    });
+    const reward = (body.param as { command: { mail_info: { attachment: { reward_items: unknown[] } }[] } })
+      .command.mail_info[0]!.attachment.reward_items[0] as {
+      init_params: Record<string, unknown>;
+      detail: { additional_info: Record<string, unknown> };
+    };
+    assert.deepEqual(reward.init_params, {
+      init_wear_value: { has_value: true, value: 37 },
+      food_material_ids: [],
+      recipe_id: 0,
+    });
+    assert.equal(reward.detail.additional_info.wear_value, 37);
+  });
+
+  it("keeps wear_value 0 when wearValue omitted", () => {
+    const body = buildAdminSendMailExecBody(baseInput);
+    const reward = (body.param as { command: { mail_info: { attachment: { reward_items: unknown[] } }[] } })
+      .command.mail_info[0]!.attachment.reward_items[0] as {
+      detail: { additional_info: Record<string, unknown> };
+    };
+    assert.equal(reward.detail.additional_info.wear_value, 0);
+  });
+
+  it("sets durability in additional_info only when durabilityValue provided", () => {
+    const body = buildAdminSendMailExecBody({
+      ...baseInput,
+      rewardItems: [{ id: "510015", cnt: "1", durabilityValue: 8 }],
+    });
+    const reward = (body.param as { command: { mail_info: { attachment: { reward_items: unknown[] } }[] } })
+      .command.mail_info[0]!.attachment.reward_items[0] as {
+      init_params: Record<string, unknown>;
+      detail: { additional_info: Record<string, unknown> };
+    };
+    assert.equal(reward.detail.additional_info.durability, 8);
+    assert.equal(reward.detail.additional_info.wear_value, 0);
+    assert.deepEqual(reward.init_params, {
+      init_wear_value: { has_value: false, value: 0 },
+      food_material_ids: [],
+      recipe_id: 0,
+    });
+    assert.ok(!("init_durability" in reward.init_params));
+  });
 });
 
 describe("buildAdminSendGlobalMailExecBody", () => {
@@ -114,5 +164,103 @@ describe("buildAdminSendGlobalMailExecBody", () => {
     });
     assert.ok(!("init_protect_value" in init.init_params));
     assert.ok(!("init_wear_value" in init.init_params));
+    assert.ok(!("initDurability" in init.init_params));
+  });
+
+  it("sets initWearValue and wear_value when wearValue provided", () => {
+    const body = buildAdminSendGlobalMailExecBody({
+      envName: "sbt01",
+      region: "SG",
+      title: "标题",
+      content: "内容",
+      startTime: 1779253200,
+      endTime: 1779274254,
+      tradable: true,
+      rewardItems: [{ id: "101038", cnt: "1", wearValue: 80 }],
+      globalMailType: "GlobalMailType_ATTACHMENT",
+      distType: "DistType_NONE",
+      senderName: "lang",
+      localization: [],
+    });
+    const attachment = (body.param as { command: { attachment: { reward_items: unknown[] } } }).command
+      .attachment;
+    const reward = attachment.reward_items[0] as {
+      init_params: Record<string, unknown>;
+      detail: { additional_info: Record<string, unknown> };
+    };
+    assert.deepEqual(reward.init_params, {
+      initWearValue: { hasValue: true, value: 80 },
+      foodMaterialIds: [],
+      recipeId: 0,
+    });
+    assert.equal(reward.detail.additional_info.wear_value, 80);
+  });
+
+  it("sets durability in additional_info only for global mail durability items", () => {
+    const body = buildAdminSendGlobalMailExecBody({
+      envName: "sbt01",
+      region: "SG",
+      title: "标题",
+      content: "内容",
+      startTime: 1779253200,
+      endTime: 1779274254,
+      tradable: true,
+      rewardItems: [{ id: "510015", cnt: "1", durabilityValue: 8 }],
+      globalMailType: "GlobalMailType_ATTACHMENT",
+      distType: "DistType_NONE",
+      senderName: "lang",
+      localization: [],
+    });
+    const attachment = (body.param as { command: { attachment: { reward_items: unknown[] } } }).command
+      .attachment;
+    const reward = attachment.reward_items[0] as {
+      init_params: Record<string, unknown>;
+      detail: { additional_info: Record<string, unknown> };
+    };
+    assert.equal(reward.detail.additional_info.durability, 8);
+    assert.ok(!("initDurability" in reward.init_params));
+  });
+});
+
+describe("buildAdminClearTimeoutMatchInfoExecBody", () => {
+  it("matches HAR body for AdminClearTimeoutMatchInfo", () => {
+    const body = buildAdminClearTimeoutMatchInfoExecBody({
+      envName: "rct01",
+      accountId: "10002125",
+      lockRegion: "SG",
+      notiRegion: "SG",
+    });
+    assert.equal(body.name, "AdminClearTimeoutMatchInfo");
+    const param = body.param as {
+      env: string;
+      command: Record<string, string>;
+    };
+    assert.equal(param.env, "rct01");
+    assert.equal(param.command.account_id, "10002125");
+    assert.equal(param.command.lock_region, "SG");
+    assert.equal(param.command.noti_region, "SG");
+    assert.equal(param.command.task_id, undefined);
+  });
+});
+
+describe("buildAddSproutScoreExecBody", () => {
+  it("matches HAR body for AddSproutScore with one-click amount", () => {
+    const body = buildAddSproutScoreExecBody({
+      envName: "rct01",
+      accountId: "10002125",
+      lockRegion: "SG",
+      notiRegion: "SG",
+      sproutScore: SPROUT_SCORE_ONE_CLICK_AMOUNT,
+    });
+    assert.equal(body.name, "AddSproutScore");
+    const param = body.param as {
+      env: string;
+      command: Record<string, string>;
+    };
+    assert.equal(param.env, "rct01");
+    assert.equal(param.command.account_id, "10002125");
+    assert.equal(param.command.lock_region, "SG");
+    assert.equal(param.command.noti_region, "SG");
+    assert.equal(param.command.sprout_score, "100000");
   });
 });

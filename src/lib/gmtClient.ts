@@ -1,14 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   buildAdminAddExpExecBody,
+  buildAdminClearTimeoutMatchInfoExecBody,
   buildAdminFinishTaskExecBody,
   buildAdminSendGlobalMailExecBody,
   buildAdminSendMailExecBody,
+  buildAddSproutScoreExecBody,
   type AdminAddExpBuildInput,
+  type AdminClearTimeoutMatchInfoBuildInput,
+  type AddSproutScoreBuildInput,
   type AdminFinishTaskBuildInput,
   type AdminSendGlobalMailBuildInput,
   type AdminSendMailBuildInput,
-} from "./gmtApi.contract";
+} from "./gmtApi.contract.ts";
 
 export const DEFAULT_GMT_BASE_URL = "https://test-krad.stdgmtool.web.garena.cn";
 
@@ -94,6 +98,32 @@ export async function gmtExecAdminAddExp(
   input: AdminAddExpBuildInput,
 ): Promise<GmtExecInvokeResult> {
   const body = buildAdminAddExpExecBody(input);
+  return invoke<GmtExecInvokeResult>("gmt_exec", {
+    baseUrl: slice.gmtBaseUrl.trim() || DEFAULT_GMT_BASE_URL,
+    cookie: slice.gmtCookie,
+    envHeader: slice.gmtEnvId != null ? String(slice.gmtEnvId) : null,
+    bodyJson: JSON.stringify(body),
+  });
+}
+
+export async function gmtExecAdminClearTimeoutMatchInfo(
+  slice: GmtSessionSlice,
+  input: AdminClearTimeoutMatchInfoBuildInput,
+): Promise<GmtExecInvokeResult> {
+  const body = buildAdminClearTimeoutMatchInfoExecBody(input);
+  return invoke<GmtExecInvokeResult>("gmt_exec", {
+    baseUrl: slice.gmtBaseUrl.trim() || DEFAULT_GMT_BASE_URL,
+    cookie: slice.gmtCookie,
+    envHeader: slice.gmtEnvId != null ? String(slice.gmtEnvId) : null,
+    bodyJson: JSON.stringify(body),
+  });
+}
+
+export async function gmtExecAddSproutScore(
+  slice: GmtSessionSlice,
+  input: AddSproutScoreBuildInput,
+): Promise<GmtExecInvokeResult> {
+  const body = buildAddSproutScoreExecBody(input);
   return invoke<GmtExecInvokeResult>("gmt_exec", {
     baseUrl: slice.gmtBaseUrl.trim() || DEFAULT_GMT_BASE_URL,
     cookie: slice.gmtCookie,

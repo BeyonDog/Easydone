@@ -15,6 +15,11 @@ describe("branchEnvDisplay", () => {
     assert.equal(getBranchEnvDisplayLabel("rct01", 1), null);
   });
 
+  it("maps GNG-prefixed rct04/rct05 to GRPC labels", () => {
+    assert.equal(getBranchEnvDisplayLabel("GNG-rct04"), "(GRPC) rct04");
+    assert.equal(getBranchEnvDisplayLabel("GNG-rct05"), "(GRPC) rct05");
+  });
+
   it("maps protocol to branch group", () => {
     assert.equal(branchGroupFromProtocol(1), "GSGCI");
     assert.equal(branchGroupFromProtocol(2), "GRPC");
@@ -61,8 +66,8 @@ describe("branchEnvDisplay", () => {
   });
 
   it("preserves exact display strings count", () => {
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 12);
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 14);
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[1], "(GRPC)pt01");
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER[7], "(GRPC)CCS");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[9], "(GRPC)CCS");
   });
 });

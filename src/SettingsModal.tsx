@@ -275,7 +275,7 @@ export function SettingsModal({
             className={`btn${settingsTab === "gtop" ? " active" : ""}`}
             onClick={() => setSettingsTab("gtop")}
           >
-            GTOP 接取任务
+            GTOP
           </button>
           <button
             type="button"

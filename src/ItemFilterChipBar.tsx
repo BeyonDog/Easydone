@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ITEM_TYPE_REMARK_PRESET_EMOTE } from "./lib/xlsxHelpers";
+import { ITEM_TYPE_REMARK_PRESET_EMOTE, ITEM_TYPE_REMARK_PRESET_FITTING_ROOM } from "./lib/xlsxHelpers";
 import { FilterChipRowShell, PinnedMoreChipRow, QualityChipRow } from "./FilterChipBarShared";
 
 export const SEASON_ITEM_CHIP_KEY = "赛季物品";
 
 export const TYPE_REMARK_PINNED_KEYS = [
   ITEM_TYPE_REMARK_PRESET_EMOTE,
+  ITEM_TYPE_REMARK_PRESET_FITTING_ROOM,
   "武器",
   "防具",
   "食材",
@@ -30,6 +31,7 @@ export type ItemFilterChipBarProps = {
   typeRemarkMore: string[];
   qualityBarKeys: string[];
   showEmotePin: boolean;
+  showFittingRoomSkinPin: boolean;
   showTypeRemarkPins: boolean;
   showQualityRow: boolean;
   showSeasonRow: boolean;
@@ -62,6 +64,7 @@ export function ItemFilterChipBar({
   typeRemarkMore,
   qualityBarKeys,
   showEmotePin,
+  showFittingRoomSkinPin,
   showTypeRemarkPins,
   showQualityRow,
   showSeasonRow,
@@ -109,6 +112,7 @@ export function ItemFilterChipBar({
   const filterTypeRemarkKey = (key: string) => {
     if (key === SEASON_ITEM_CHIP_KEY) return showSeasonRow;
     if (key === ITEM_TYPE_REMARK_PRESET_EMOTE) return showEmotePin;
+    if (key === ITEM_TYPE_REMARK_PRESET_FITTING_ROOM) return showFittingRoomSkinPin;
     return showTypeRemarkPins;
   };
 

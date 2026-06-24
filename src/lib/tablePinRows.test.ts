@@ -1,6 +1,30 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mergePinnedOrder, partitionRowsByPinOrder } from "./tablePinRows.ts";
+import {
+  mergePinnedOrder,
+  partitionRowsByPinOrder,
+  pinSelectionToFront,
+  pinVisibleSelectionToFront,
+} from "./tablePinRows.ts";
+
+describe("pinSelectionToFront", () => {
+  it("moves selection to front in selectionOrder", () => {
+    assert.deepEqual(pinSelectionToFront([1, 2, 3], [2, 3], [3, 2]), [3, 2, 1]);
+  });
+
+  it("reorders already-pinned rows to front", () => {
+    assert.deepEqual(pinSelectionToFront([5, 1, 2], [1], [1]), [1, 5, 2]);
+  });
+});
+
+describe("pinVisibleSelectionToFront", () => {
+  it("pins visible selection on item table", () => {
+    const pinned = { item: [9], task: [] };
+    const result = pinVisibleSelectionToFront(pinned, "item", [2, 3], [3, 2]);
+    assert.deepEqual(result.item, [3, 2, 9]);
+    assert.deepEqual(result.task, []);
+  });
+});
 
 describe("mergePinnedOrder", () => {
   it("appends new ids in selectionOrder first, deduped", () => {

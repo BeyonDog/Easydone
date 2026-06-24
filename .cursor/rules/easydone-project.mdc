@@ -1,0 +1,40 @@
+---
+description: easydone 项目结构与开发命令（Tauri + React + Rust）
+alwaysApply: true
+---
+
+# easydone 项目
+
+本地 Tauri 桌面工具：浏览 Excel 道具/任务表，GMT 发信、GTOP 上传、模板与筛选。
+
+## 栈与目录
+
+- **前端**：React 18 + TypeScript，`src/App.tsx` 为主 UI
+- **逻辑**：优先放 `src/lib/`；React hooks 放 `src/hooks/`
+- **后端**：`src-tauri/`（Rust）
+
+## 常用命令（Windows PowerShell 用 `npm.cmd`）
+
+```bash
+npm.cmd test
+npm.cmd run build
+npm.cmd run tauri dev
+```
+
+涉及 Rust 改动时额外：`cargo check`（在 `src-tauri/`）。
+
+## Excel 工作区（相对 `config.excelWorkspaceRoot`）
+
+见 `src/lib/paths.ts`：
+
+- `Excel/Item.xlsx`、`Excel/Mission.xlsx`、`Excel/Account.xlsx`
+- `Config/Item.csv`（或 `item.csv`）、`Config/Task.csv`（或 `task.csv`）
+
+工作区根由用户在向导中配置，**不要**在代码或文档里硬编码绝对路径。
+
+## 改动原则
+
+- 最小 diff，不扩 scope，不重写无关代码
+- 不主动编辑 `.cursor/plans/` 或用户 plan 文件
+- 不主动 `git commit` / `git push`（除非用户明确要求）
+- 单测：`src/lib/*.test.ts`，`npm test` 使用 `node --experimental-strip-types --test`

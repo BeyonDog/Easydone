@@ -388,6 +388,148 @@ pub async fn gtop_upload_task_csv(
 }
 
 #[tauri::command]
+pub async fn gtop_fetch_config_csv_file_path(
+    base_url: String,
+    cookie: String,
+    project: String,
+    env_id: String,
+    csv_filename: String,
+) -> Result<String, String> {
+    let name = csv_filename.trim();
+    if name.is_empty() {
+        return Err("配置文件名不能为空".into());
+    }
+    let base = normalize_base_url(&base_url);
+    let url = format!(
+        "{base}/api/p4Config/content/getByEnvAndFilenames?env_id={}&filenames={}",
+        urlencoding::encode(env_id.trim()),
+        urlencoding::encode(name)
+    );
+    let client = client()?;
+    let headers = build_gtop_headers(&cookie, &project)?;
+    let resp = client
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("HTTP {status}: {text}"));
+    }
+    let root: Value = serde_json::from_str(&text).map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let path = root
+        .get("data")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("未返回 {name} 上传路径"))?;
+    Ok(path)
+}
+
+#[tauri::command]
+pub async fn gtop_upload_config_csv(
+    base_url: String,
+    cookie: String,
+    project: String,
+    env_id: String,
+    region_server_id: String,
+    file_path: String,
+    csv_local_path: String,
+    csv_filename: String,
+) -> Result<GtopUploadResult, String> {
+    let name = csv_filename.trim();
+    if name.is_empty() {
+        return Err("配置文件名不能为空".into());
+    }
+    let bytes =
+        std::fs::read(&csv_local_path).map_err(|e| format!("读取 CSV 失败: {e}"))?;
+    let base = normalize_base_url(&base_url);
+    let url = format!("{base}/api/regionServer/task/file/upload");
+    let client = client()?;
+    let headers = build_gtop_headers(&cookie, &project)?;
+    let part = Part::bytes(bytes)
+        .file_name(name.to_string())
+        .mime_str("text/csv")
+        .map_err(|e| e.to_string())?;
+    let form = Form::new()
+        .part("file", part)
+        .text("region_server_ids", region_server_id.trim().to_string())
+        .text("env_id", env_id.trim().to_string())
+        .text("permission_tag", "area:manage:upload")
+        .text("file_paths", file_path.trim().to_string());
+    let resp = client
+        .post(&url)
+        .headers(headers)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("上传失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Ok(GtopUploadResult {
+            ok: false,
+            message: format!("HTTP {status}: {text}"),
+        });
+    }
+    Ok(GtopUploadResult {
+        ok: true,
+        message: if text.len() > 200 {
+            format!("上传成功（{} 字节响应）", text.len())
+        } else if text.trim().is_empty() {
+            "上传成功".into()
+        } else {
+            text
+        },
+    })
+}
+
+#[tauri::command]
+pub fn list_config_csv_files(workspace_root: String) -> Result<Vec<String>, String> {
+    let root = workspace_root.trim();
+    if root.is_empty() {
+        return Ok(vec![]);
+    }
+    let config_dir = std::path::Path::new(root).join("Config");
+    if !config_dir.is_dir() {
+        return Ok(vec![]);
+    }
+    let mut paths: Vec<String> = Vec::new();
+    for ent in std::fs::read_dir(&config_dir).map_err(|e| format!("读取 Config 目录失败: {e}"))? {
+        let ent = ent.map_err(|e| e.to_string())?;
+        let path = ent.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        if ext != "csv" {
+            continue;
+        }
+        paths.push(path.to_string_lossy().to_string());
+    }
+    paths.sort_by(|a, b| {
+        let fa = std::path::Path::new(a)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(a);
+        let fb = std::path::Path::new(b)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(b);
+        fa.cmp(fb)
+    });
+    Ok(paths)
+}
+
+#[tauri::command]
 pub fn gtop_make_temp_task_csv(app: AppHandle, patched_utf8: String) -> Result<String, String> {
     gtop_make_temp_named_csv(app, patched_utf8, "Task")
 }

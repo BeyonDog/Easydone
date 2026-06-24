@@ -7,6 +7,8 @@ export const BRANCH_ENV_DISPLAY_ORDER: readonly string[] = [
   "(GSGCI) rct01",
   "(GSGCI) sbt",
   "(GRPC) rct03",
+  "(GRPC) rct04",
+  "(GRPC) rct05",
   "(GRPC)CCS",
   "(GRPC) sbt02",
   "(GRPC) sbt01",

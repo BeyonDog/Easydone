@@ -4,11 +4,13 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { AddExpPanel } from "./AddExpPanel";
+import { UploadConfigPanel } from "./UploadConfigPanel.tsx";
 import { useClampedMenuPosition } from "./hooks/useClampedMenuPosition.ts";
 import { useTableAxisScroll } from "./hooks/useTableAxisScroll.ts";
 import { useTableRowToTemplateDrag } from "./hooks/useTableRowToTemplateDrag.tsx";
 import { GlobalSendMailModal } from "./GlobalSendMailModal.tsx";
 import { ColumnPickModal } from "./ColumnPickModal";
+import { ColumnFilterPopover } from "./ColumnFilterPopover.tsx";
 import { DataTableBody, TABLE_ROW_HEIGHT_ESTIMATE } from "./DataTableBody";
 import { FilterOptionGrid } from "./FilterOptionGrid";
 import { ItemFilterChipBar, SEASON_ITEM_CHIP_KEY, TYPE_REMARK_PINNED_KEYS } from "./ItemFilterChipBar";
@@ -63,8 +65,10 @@ import {
   taskTypeFilterKey,
   TASK_TYPE_LABEL_SORT_ORDER,
   ITEM_TYPE_REMARK_PRESET_EMOTE,
+  ITEM_TYPE_REMARK_PRESET_FITTING_ROOM,
   isDaHongJianShiEmoteTypeRemark,
   rowMatchesEmotePreset,
+  rowMatchesFittingRoomSkinPreset,
   rowMatchesKeyword,
   typeRemarkFilterKey,
   type SheetMatrix,
@@ -91,9 +95,28 @@ import {
   isTableScrollbarHit,
   type BoxSelectPointerState,
 } from "./lib/tableBoxSelect";
-import { mergePinnedOrder, partitionRowsByPinOrder } from "./lib/tablePinRows";
+import { pinSelectionToFront, pinVisibleSelectionToFront } from "./lib/tablePinRows";
+import { computeDisplayBodyRows } from "./lib/tableDisplayRows.ts";
+import {
+  removeDataRowsFromAoa,
+  resolveTemplateRowsToDelete,
+} from "./lib/removeTemplateRows.ts";
 import { toggleVisibleRowSelection } from "./lib/rowSelection.ts";
 import { parseItemLineQtyInput } from "./lib/itemLineQty.ts";
+import {
+  clampItemDurability,
+  clampItemWearValue,
+  DEFAULT_ITEM_WEAR_VALUE,
+  enrichSendItemsFromItemSheet,
+  hydrateItemValuesFromTemplateItems,
+  itemDurabilityMaxForSendItem,
+  resolveInitDurabilityColumnIndex,
+  rowInitDurabilityMax,
+  rowSupportsDurabilityValue,
+  rowSupportsWearValue,
+  type SendItemsWearOptions,
+} from "./lib/itemWearValue.ts";
+import { ItemValueSlider } from "./ItemValueSlider.tsx";
 import {
   buildItemTypeLookupIndex,
   EMPTY_ITEM_TYPE_LOOKUP_INDEX,
@@ -147,15 +170,57 @@ import {
   type OperationOutcome,
 } from "./lib/operationLog";
 import { OperationLogPanel } from "./OperationLogPanel";
-import { rowPassesItemTableFilter } from "./lib/itemTableFilter";
+import { mergeItemTypeRemarkOptionKeys, rowPassesItemTableFilter } from "./lib/itemTableFilter";
+import {
+  cloneColumnValueFilters,
+  collectColumnUniqueValues,
+  columnFilterKey,
+  isColumnValueFilterActiveForColumn,
+  normalizeColumnValueFiltersFromDisk,
+  rowPassesColumnValueFilters,
+  columnValueFiltersActive,
+} from "./lib/columnValueFilter.ts";
 import { migrateConfigTemplates } from "./lib/templateMigrate";
+import { headersCompatibleForAppend, syncSavedTemplatesToMasterSheets } from "./lib/templateHeaderSync.ts";
+import { runClearTimeoutMatchInfo, type ClearTimeoutMatchInfoDeps } from "./lib/clearTimeoutMatchInfo.ts";
+import { runAddSproutScore, type AddSproutScoreDeps } from "./lib/addSproutScore.ts";
 import { Sidebar } from "./Sidebar.tsx";
+import { SidebarFullscreenGallery } from "./SidebarFullscreenGallery.tsx";
+import { PanelSplitDivider } from "./PanelSplitDivider.tsx";
+import {
+  appendSidebarCardToLayout,
+  removeSidebarCardFromLayout,
+} from "./lib/sidebarCardLayout.ts";
+import { templateSidebarCardId } from "./lib/sidebarCardRegistry.ts";
+import {
+  clampSidebarGallerySplitWidth,
+  resolveSidebarGallerySplitWidth,
+} from "./lib/sidebarGallerySplit.ts";
 import {
   DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR,
   DEFAULT_SIDEBAR_ITEM_CARD_COLOR,
   DEFAULT_SIDEBAR_TASK_CARD_COLOR,
   sidebarAddExpDefaultColor,
+  sidebarResetMatchDefaultColor,
+  sidebarSproutDefaultColor,
+  sidebarUploadConfigDefaultColor,
 } from "./lib/sidebarCardColor.ts";
+import {
+  clearModifiedConfigCsv,
+  clearModifiedConfigCsvBatch,
+  listModifiedConfigCsvFilenames,
+  markModifiedConfigCsvBatch,
+  resolveWorkspacePathsForFilenames,
+} from "./lib/gtopModifiedConfigCsv.ts";
+import {
+  dedupeCsvPathsByBasename,
+  formatRestoreConfirmMessage,
+  formatSingleRestoreConfirmMessage,
+  formatUploadConfirmMessage,
+  restoreModifiedWorkspaceConfigCsvsViaGtop,
+  restoreSingleModifiedConfigCsvViaGtop,
+  uploadLocalConfigCsvsToGtop,
+} from "./lib/gtopUploadConfig.ts";
 import { TopbarUpdateControls } from "./TopbarUpdateControls.tsx";
 import { UpdateAvailableModal } from "./UpdateAvailableModal.tsx";
 import { useAppUpdater } from "./useAppUpdater.ts";
@@ -283,7 +348,7 @@ function migrateTaskTypeStoredKey(k: string): string {
 
 /** 当前表格勾选行所属业务类型（与快照 source 对齐） */
 function getCurrentTableSource(activeView: ActiveView, config: AppConfig): "item" | "task" | null {
-  if (activeView.kind === "addExp") return null;
+  if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return null;
   if (activeView.kind === "item") return "item";
   if (activeView.kind === "task") return "task";
   if (activeView.kind === "template" || activeView.kind === "snapshot") {
@@ -303,14 +368,6 @@ function compareDataCells(a: unknown, b: unknown): number {
   const sa = cellStr(a);
   const sb = cellStr(b);
   return sa.localeCompare(sb, "zh-CN", { numeric: true, sensitivity: "accent" });
-}
-
-function headersCompatibleForAppend(currentHeader: unknown[] | undefined, snapHeader: unknown[] | undefined): boolean {
-  if (!currentHeader?.length || !snapHeader?.length || currentHeader.length !== snapHeader.length) return false;
-  for (let i = 0; i < currentHeader.length; i++) {
-    if (cellStr(currentHeader[i]) !== cellStr(snapHeader[i])) return false;
-  }
-  return true;
 }
 
 /** 从 currentAoa 与 selectedRows 构建选中行子表（含表头） */
@@ -338,6 +395,7 @@ function emptyItemTableFilter(): ItemTableFilter {
     seasonItemOnly: false,
     rowKeyword: null,
     customKeywordKeys: [],
+    columnValueFilters: {},
   };
 }
 
@@ -362,6 +420,7 @@ function normalizeItemTableFilterFromDisk(raw: unknown): ItemTableFilter | null 
     savedCustomKeywords: normalizeKeyOrderField(o.savedCustomKeywords),
     customKeywordKeys: normalizeStringArray(o.customKeywordKeys),
     chipBarCustomKeywordOrder: normalizeKeyOrderField(o.chipBarCustomKeywordOrder),
+    columnValueFilters: normalizeColumnValueFiltersFromDisk(o.columnValueFilters),
   };
   if (itemTableFilterIsInactive(f) && !hasCustomItemKeyOrder(f)) return null;
   return f;
@@ -379,6 +438,7 @@ function clearItemFilterSelectionsKeepOrder(d: ItemTableFilter): ItemTableFilter
     seasonItemOnly: false,
     rowKeyword: null,
     customKeywordKeys: [],
+    columnValueFilters: {},
   };
 }
 
@@ -401,6 +461,7 @@ function cloneItemTableFilter(f: ItemTableFilter | null): ItemTableFilter {
     savedCustomKeywords: f.savedCustomKeywords?.length ? [...f.savedCustomKeywords] : null,
     customKeywordKeys: [...f.customKeywordKeys],
     chipBarCustomKeywordOrder: f.chipBarCustomKeywordOrder?.length ? [...f.chipBarCustomKeywordOrder] : null,
+    columnValueFilters: cloneColumnValueFilters(f.columnValueFilters),
   };
 }
 
@@ -413,7 +474,8 @@ function itemTableFilterIsInactive(f: ItemTableFilter | null): boolean {
     !f.defenseRange &&
     !f.seasonItemOnly &&
     !(f.rowKeyword?.trim()) &&
-    f.customKeywordKeys.length === 0
+    f.customKeywordKeys.length === 0 &&
+    !columnValueFiltersActive(f.columnValueFilters)
   );
 }
 
@@ -550,7 +612,7 @@ function sortChainRest(rest: string[]): string[] {
 }
 
 function emptyTaskTableFilter(): TaskTableFilter {
-  return { taskTypeKeys: [], chainKeys: [], rowKeyword: null, customKeywordKeys: [] };
+  return { taskTypeKeys: [], chainKeys: [], rowKeyword: null, customKeywordKeys: [], columnValueFilters: {} };
 }
 
 function normalizeTaskTableFilterFromDisk(raw: unknown): TaskTableFilter | null {
@@ -568,6 +630,7 @@ function normalizeTaskTableFilterFromDisk(raw: unknown): TaskTableFilter | null 
     savedCustomKeywords: normalizeKeyOrderField(o.savedCustomKeywords),
     customKeywordKeys: normalizeStringArray(o.customKeywordKeys),
     chipBarCustomKeywordOrder: normalizeKeyOrderField(o.chipBarCustomKeywordOrder),
+    columnValueFilters: normalizeColumnValueFiltersFromDisk(o.columnValueFilters),
   };
   if (taskTableFilterIsInactive(f) && !hasCustomTaskKeyOrder(f)) return null;
   return f;
@@ -587,11 +650,12 @@ function cloneTaskTableFilter(f: TaskTableFilter | null): TaskTableFilter {
     savedCustomKeywords: f.savedCustomKeywords?.length ? [...f.savedCustomKeywords] : null,
     customKeywordKeys: [...f.customKeywordKeys],
     chipBarCustomKeywordOrder: f.chipBarCustomKeywordOrder?.length ? [...f.chipBarCustomKeywordOrder] : null,
+    columnValueFilters: cloneColumnValueFilters(f.columnValueFilters),
   };
 }
 
 function clearTaskFilterSelectionsKeepOrder(d: TaskTableFilter): TaskTableFilter {
-  return { ...d, taskTypeKeys: [], chainKeys: [], rowKeyword: null, customKeywordKeys: [] };
+  return { ...d, taskTypeKeys: [], chainKeys: [], rowKeyword: null, customKeywordKeys: [], columnValueFilters: {} };
 }
 
 function taskTableFilterIsInactive(f: TaskTableFilter | null): boolean {
@@ -600,11 +664,17 @@ function taskTableFilterIsInactive(f: TaskTableFilter | null): boolean {
     f.taskTypeKeys.length === 0 &&
     f.chainKeys.length === 0 &&
     !(f.rowKeyword?.trim()) &&
-    f.customKeywordKeys.length === 0
+    f.customKeywordKeys.length === 0 &&
+    !columnValueFiltersActive(f.columnValueFilters)
   );
 }
 
-function rowPassesTaskTableFilter(row: unknown[], f: TaskTableFilter, col: { tt: number; ch: number }): boolean {
+function rowPassesTaskTableFilter(
+  row: unknown[],
+  f: TaskTableFilter,
+  col: { tt: number; ch: number },
+  headers: readonly string[] = [],
+): boolean {
   if (f.rowKeyword?.trim() && !rowMatchesKeyword(row, f.rowKeyword)) return false;
   if (f.customKeywordKeys.length > 0) {
     if (!f.customKeywordKeys.every((k) => rowMatchesKeyword(row, k))) return false;
@@ -616,6 +686,7 @@ function rowPassesTaskTableFilter(row: unknown[], f: TaskTableFilter, col: { tt:
     const ck = taskChainFilterKey(row[col.ch]);
     if (ck === null || !f.chainKeys.includes(ck)) return false;
   }
+  if (!rowPassesColumnValueFilters(row, f.columnValueFilters, headers)) return false;
   return true;
 }
 
@@ -892,6 +963,9 @@ const defaultConfig = (): AppConfig => ({
   sidebarItemCardColorOverride: null,
   sidebarTaskCardColorOverride: null,
   sidebarTemplateOrder: null,
+  sidebarCardOrder: null,
+  sidebarCardHidden: null,
+  sidebarGallerySplitPx: null,
   initialItemFilterSheetShown: false,
   initialTaskFilterSheetShown: false,
   gmtBaseUrl: DEFAULT_GMT_BASE_URL,
@@ -975,12 +1049,33 @@ export default function App() {
   const [templateRenameModal, setTemplateRenameModal] = useState<{ id: string; draft: string } | null>(null);
   const [pendingDeleteTemplate, setPendingDeleteTemplate] = useState<{ id: string; title: string } | null>(null);
   const [addExpPresetBusy, setAddExpPresetBusy] = useState(false);
+  const [clearMatchBusy, setClearMatchBusy] = useState(false);
+  const [addSproutBusy, setAddSproutBusy] = useState(false);
+  const [uploadConfigBusy, setUploadConfigBusy] = useState(false);
+  const [sidebarGalleryOpen, setSidebarGalleryOpen] = useState(false);
+  const [sidebarGalleryMainOpen, setSidebarGalleryMainOpen] = useState(false);
+  const [gallerySplitWidthPx, setGallerySplitWidthPx] = useState(520);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const gallerySplitPersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [uploadConfigProgress, setUploadConfigProgress] = useState<string | null>(null);
+  const [restoringConfigFilename, setRestoringConfigFilename] = useState<string | null>(null);
   const [sendTemplateModal, setSendTemplateModal] = useState<{
     templateId: string;
     title: string;
     draftItems: SendTemplateItem[];
   } | null>(null);
-  const [columnHeaderMenu, setColumnHeaderMenu] = useState<{ x: number; y: number; headerName: string } | null>(null);
+  const [columnHeaderMenu, setColumnHeaderMenu] = useState<{
+    x: number;
+    y: number;
+    headerName: string;
+    colIndex: number;
+  } | null>(null);
+  const [columnFilterPopover, setColumnFilterPopover] = useState<{
+    colIndex: number;
+    headerName: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const logPanelRef = useRef<HTMLDivElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
   /** 道具表每行数量（dataIdx → qty），默认 1 */
@@ -999,10 +1094,22 @@ export default function App() {
   const [layoutResizeSeq, setLayoutResizeSeq] = useState(0);
   /** 道具 / 任务表顶栏 GMT 发送前置校验提示 */
   const [itemLineQty, setItemLineQty] = useState<Record<number, number>>({});
+  const [defaultWearValue, setDefaultWearValue] = useState(DEFAULT_ITEM_WEAR_VALUE);
+  const [itemLineWear, setItemLineWear] = useState<Record<number, number>>({});
+  const [wearRowOverride, setWearRowOverride] = useState<Set<number>>(() => new Set());
+  const [itemLineDurability, setItemLineDurability] = useState<Record<number, number>>({});
+  const [durabilityRowOverride, setDurabilityRowOverride] = useState<Set<number>>(() => new Set());
   const selectionByViewRef = useRef<Map<string, ViewSelectionSnapshot>>(new Map());
   const selectedRowsRef = useRef(selectedRows);
   const selectedRowOrderRef = useRef(selectedRowOrder);
   const itemLineQtyRef = useRef(itemLineQty);
+  const defaultWearValueRef = useRef(defaultWearValue);
+  const itemLineWearRef = useRef(itemLineWear);
+  const wearRowOverrideRef = useRef(wearRowOverride);
+  const itemLineDurabilityRef = useRef(itemLineDurability);
+  const durabilityRowOverrideRef = useRef(durabilityRowOverride);
+  const selectableVisibleDataIdxsRef = useRef<number[]>([]);
+  const pinAutoSuppressedRef = useRef(false);
   const [itemFilterModalOpen, setItemFilterModalOpen] = useState(false);
   const [itemFilterDraft, setItemFilterDraft] = useState<ItemTableFilter>(() => emptyItemTableFilter());
   const [taskFilterModalOpen, setTaskFilterModalOpen] = useState(false);
@@ -1048,7 +1155,50 @@ export default function App() {
     setConfig(next);
   }, []);
 
+  const persistRef = useRef(persist);
+  useEffect(() => {
+    persistRef.current = persist;
+  }, [persist]);
+
   const configRef = useRef<AppConfig | null>(null);
+
+  const scheduleGallerySplitPersist = useCallback((widthPx: number) => {
+    if (gallerySplitPersistTimerRef.current) {
+      clearTimeout(gallerySplitPersistTimerRef.current);
+    }
+    gallerySplitPersistTimerRef.current = setTimeout(() => {
+      gallerySplitPersistTimerRef.current = null;
+      const c = configRef.current;
+      if (!c || c.sidebarGallerySplitPx === widthPx) return;
+      void persistRef.current({ ...c, sidebarGallerySplitPx: widthPx });
+    }, 300);
+  }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    const bodyWidth = bodyRef.current?.clientWidth ?? window.innerWidth;
+    setGallerySplitWidthPx(resolveSidebarGallerySplitWidth(config.sidebarGallerySplitPx, bodyWidth));
+  }, [config?.sidebarGallerySplitPx]);
+
+  useEffect(() => {
+    if (!sidebarGalleryOpen || !sidebarGalleryMainOpen) return;
+    const onResize = () => {
+      const bodyWidth = bodyRef.current?.clientWidth ?? window.innerWidth;
+      setGallerySplitWidthPx((w) => clampSidebarGallerySplitWidth(w, bodyWidth));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [sidebarGalleryOpen, sidebarGalleryMainOpen]);
+
+  useEffect(
+    () => () => {
+      if (gallerySplitPersistTimerRef.current) {
+        clearTimeout(gallerySplitPersistTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const gmtAccountIdDraftRef = useRef("");
   useEffect(() => {
     configRef.current = config;
@@ -1242,6 +1392,17 @@ export default function App() {
             setAccountLevelByLevel(null);
             setAccountLevelParseError(accE instanceof Error ? accE.message : String(accE));
           });
+        }
+        if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
+          const sync = syncSavedTemplatesToMasterSheets({
+            templates: c.savedTemplates,
+            itemAoa: item,
+            taskAoa: task,
+            itemRemarkColumn: c.itemRemarkColumn,
+          });
+          if (sync.changedIds.length > 0) {
+            await persistRef.current({ ...c, savedTemplates: sync.templates });
+          }
         }
         try {
           const fp = await invoke<ExcelWorkspaceMtimeFingerprint>("excel_workspace_mtime_fingerprint", {
@@ -1548,7 +1709,7 @@ export default function App() {
   }, [activeView, itemAoa, taskAoa, config]);
 
   const isItemTableView = useMemo(() => {
-    if (activeView.kind === "addExp") return false;
+    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return false;
     if (activeView.kind === "item") return true;
     if (activeView.kind === "task") return false;
     if (!config) return false;
@@ -1556,7 +1717,7 @@ export default function App() {
   }, [activeView, config]);
 
   const isTaskTableView = useMemo(() => {
-    if (activeView.kind === "addExp") return false;
+    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return false;
     if (activeView.kind === "task") return true;
     if (activeView.kind === "item") return false;
     if (!config) return false;
@@ -1623,7 +1784,7 @@ export default function App() {
   ]);
 
   const hiddenSet = useMemo(() => {
-    if (activeView.kind === "addExp") return new Set<string>();
+    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return new Set<string>();
     if (activeView.kind === "template" || activeView.kind === "snapshot") return new Set<string>();
     const arr = activeView.kind === "item" ? config?.hiddenItemColumns ?? [] : config?.hiddenTaskColumns ?? [];
     const blocked = activeView.kind === "item" ? NON_HIDEABLE_ITEM_HEADERS : NON_HIDEABLE_TASK_HEADERS;
@@ -1690,13 +1851,18 @@ export default function App() {
   }, [baseBodyRows, currentAoa, tableSheetSource]);
 
   const itemFilterColIdx = useMemo(() => {
-    if (!isItemTableView || !headers.length) return { tr: -1, def: -1, qual: -1, remark: -1, season: -1 };
+    if (!isItemTableView || !headers.length) {
+      return { tr: -1, def: -1, qual: -1, remark: -1, season: -1, type: -1, sub: -1, initDur: -1 };
+    }
     return {
       tr: resolveTypeRemarkColumnIndex(headers),
       def: resolveDefenseValueColumnIndex(headers),
       qual: resolveItemQualityColumnIndex(headers),
       remark: resolveRemarkColumnIndex(headers, config?.itemRemarkColumn ?? null),
       season: resolveSeasonItemColumnIndex(headers),
+      type: resolveItemRowTypeColumnIndex(headers),
+      sub: resolveItemRowSubTypeColumnIndex(headers),
+      initDur: resolveInitDurabilityColumnIndex(headers),
     };
   }, [isItemTableView, headers, config?.itemRemarkColumn]);
 
@@ -1762,42 +1928,26 @@ export default function App() {
   }, [isItemTableView, isTaskTableView, currentAoa, taskFilterColIdx]);
 
   const itemTypeRemarkDisplayKeys = useMemo(() => {
-    if (itemFilterColIdx.remark < 0 && itemFilterColIdx.tr < 0) return [];
-    if (itemFilterColIdx.remark < 0) {
-      const merged = mergeKeyOrder(
-        itemFilterOptions.typeRemark,
-        itemFilterDraft.typeRemarkKeyOrder ?? null,
-        sortTypeRemarkRest,
-      );
-      return merged.filter((k) => k !== ITEM_TYPE_REMARK_PRESET_EMOTE);
-    }
-    const merged = mergeKeyOrder(itemFilterOptions.typeRemark, itemFilterDraft.typeRemarkKeyOrder ?? null, sortTypeRemarkRest);
-    const rest = itemFilterColIdx.tr >= 0 ? merged.filter((k) => k !== ITEM_TYPE_REMARK_PRESET_EMOTE) : [];
-    return [ITEM_TYPE_REMARK_PRESET_EMOTE, ...rest];
-  }, [itemFilterOptions.typeRemark, itemFilterDraft.typeRemarkKeyOrder, itemFilterColIdx.tr, itemFilterColIdx.remark]);
+    const merged = mergeKeyOrder(
+      itemFilterOptions.typeRemark,
+      itemFilterDraft.typeRemarkKeyOrder ?? null,
+      sortTypeRemarkRest,
+    );
+    return mergeItemTypeRemarkOptionKeys(merged, itemFilterColIdx);
+  }, [itemFilterOptions.typeRemark, itemFilterDraft.typeRemarkKeyOrder, itemFilterColIdx]);
   const itemQualityDisplayKeys = useMemo(
     () => mergeKeyOrder(itemFilterOptions.quality, itemFilterDraft.qualityKeyOrder ?? null, sortQualityRest),
     [itemFilterOptions.quality, itemFilterDraft.qualityKeyOrder],
   );
 
   const itemTypeRemarkAllKeys = useMemo(() => {
-    if (itemFilterColIdx.remark < 0 && itemFilterColIdx.tr < 0) return [];
-    if (itemFilterColIdx.remark < 0) {
-      const merged = mergeKeyOrder(
-        itemFilterOptions.typeRemark,
-        config?.itemTableFilter?.typeRemarkKeyOrder ?? null,
-        sortTypeRemarkRest,
-      );
-      return merged.filter((k) => k !== ITEM_TYPE_REMARK_PRESET_EMOTE);
-    }
     const merged = mergeKeyOrder(
       itemFilterOptions.typeRemark,
       config?.itemTableFilter?.typeRemarkKeyOrder ?? null,
       sortTypeRemarkRest,
     );
-    const rest = itemFilterColIdx.tr >= 0 ? merged.filter((k) => k !== ITEM_TYPE_REMARK_PRESET_EMOTE) : [];
-    return [ITEM_TYPE_REMARK_PRESET_EMOTE, ...rest];
-  }, [itemFilterOptions.typeRemark, config?.itemTableFilter?.typeRemarkKeyOrder, itemFilterColIdx.tr, itemFilterColIdx.remark]);
+    return mergeItemTypeRemarkOptionKeys(merged, itemFilterColIdx);
+  }, [itemFilterOptions.typeRemark, config?.itemTableFilter?.typeRemarkKeyOrder, itemFilterColIdx]);
 
   const itemQualityAllKeys = useMemo(
     () => mergeKeyOrder(itemFilterOptions.quality, config?.itemTableFilter?.qualityKeyOrder ?? null, sortQualityRest),
@@ -1807,9 +1957,12 @@ export default function App() {
   const chipTypeRemarkPinnedBase = useMemo(() => {
     return TYPE_REMARK_PINNED_KEYS.filter((k) => {
       if (k === ITEM_TYPE_REMARK_PRESET_EMOTE) return itemFilterColIdx.remark >= 0;
+      if (k === ITEM_TYPE_REMARK_PRESET_FITTING_ROOM) {
+        return itemFilterColIdx.type >= 0 || itemFilterColIdx.sub >= 0;
+      }
       return itemFilterColIdx.tr >= 0;
     });
-  }, [itemFilterColIdx.tr, itemFilterColIdx.remark]);
+  }, [itemFilterColIdx.tr, itemFilterColIdx.remark, itemFilterColIdx.type, itemFilterColIdx.sub]);
 
   const chipTypeRemarkBarValidKeys = useMemo(() => {
     const keys = [...itemTypeRemarkAllKeys];
@@ -1958,6 +2111,40 @@ export default function App() {
     return config?.taskTableFilter ?? null;
   }, [isTaskTableView, taskFilterModalOpen, taskFilterDraft, config?.taskTableFilter]);
 
+  const canColumnFilter =
+    Boolean(currentAoa && currentAoa.length > 1) &&
+    activeView.kind !== "addExp" &&
+    activeView.kind !== "uploadConfig" &&
+    (isItemTableView || isTaskTableView);
+
+  const activeColumnValueFilters = useMemo(() => {
+    if (isItemTableView) return activeItemTableFilter?.columnValueFilters ?? null;
+    if (isTaskTableView) return activeTaskTableFilter?.columnValueFilters ?? null;
+    return null;
+  }, [isItemTableView, isTaskTableView, activeItemTableFilter, activeTaskTableFilter]);
+
+  const columnFilterPopoverData = useMemo(() => {
+    if (!columnFilterPopover) return null;
+    const { colIndex, headerName } = columnFilterPopover;
+    const key = columnFilterKey(headerName, colIndex);
+    const filters = isItemTableView
+      ? activeItemTableFilter?.columnValueFilters
+      : isTaskTableView
+        ? activeTaskTableFilter?.columnValueFilters
+        : null;
+    return {
+      uniqueValues: collectColumnUniqueValues(dataBodyRows, colIndex),
+      initialSelectedKeys: filters?.[key] ?? [],
+    };
+  }, [
+    columnFilterPopover,
+    dataBodyRows,
+    isItemTableView,
+    isTaskTableView,
+    activeItemTableFilter,
+    activeTaskTableFilter,
+  ]);
+
   const activeItemFilterForChip = useMemo(
     () => (activeItemTableFilter ? cloneItemTableFilter(activeItemTableFilter) : emptyItemTableFilter()),
     [activeItemTableFilter],
@@ -1978,11 +2165,11 @@ export default function App() {
     if (isItemTableView) {
       if (itemTableFilterIsInactive(activeItemTableFilter)) return dataBodyRows;
       const f = activeItemTableFilter!;
-      return dataBodyRows.filter(({ row }) => rowPassesItemTableFilter(row, f, itemFilterColIdx));
+      return dataBodyRows.filter(({ row }) => rowPassesItemTableFilter(row, f, itemFilterColIdx, headers));
     }
     if (taskTableFilterIsInactive(activeTaskTableFilter)) return dataBodyRows;
     const tf = activeTaskTableFilter!;
-    return dataBodyRows.filter(({ row }) => rowPassesTaskTableFilter(row, tf, taskFilterColIdx));
+    return dataBodyRows.filter(({ row }) => rowPassesTaskTableFilter(row, tf, taskFilterColIdx, headers));
   }, [
     dataBodyRows,
     isItemTableView,
@@ -1991,6 +2178,7 @@ export default function App() {
     activeTaskTableFilter,
     itemFilterColIdx,
     taskFilterColIdx,
+    headers,
   ]);
 
   const pinActive = isItemTableView
@@ -2000,15 +2188,8 @@ export default function App() {
       : false;
 
   const displayBodyRows = useMemo(() => {
-    let rows = filteredBodyRows;
-    if (tableSort) {
-      const { colIndex, descending } = tableSort;
-      const dir = descending ? -1 : 1;
-      rows = [...filteredBodyRows].sort((x, y) => dir * compareDataCells(x.row[colIndex], y.row[colIndex]));
-    }
-
     const order = isItemTableView ? pinnedRowOrder.item : isTaskTableView ? pinnedRowOrder.task : [];
-    return order.length ? partitionRowsByPinOrder(rows, order) : rows;
+    return computeDisplayBodyRows(filteredBodyRows, tableSort, order, compareDataCells);
   }, [
     filteredBodyRows,
     tableSort,
@@ -2093,6 +2274,14 @@ export default function App() {
     }, 3000);
   }, []);
 
+  const pinSelectedRowsAfterFilterChange = useCallback((table: "item" | "task") => {
+    if (pinAutoSuppressedRef.current) return;
+    const selected = selectedRowsRef.current;
+    const visible = selectableVisibleDataIdxsRef.current.filter((di) => selected.has(di));
+    if (visible.length === 0) return;
+    setPinnedRowOrder((p) => pinVisibleSelectionToFront(p, table, visible, selectedRowOrderRef.current));
+  }, []);
+
   const commitItemFilterSave = useCallback(
     (draftOverride?: ItemTableFilter, opts?: { keepModalOpen?: boolean; immediate?: boolean }) => {
       if (!config) return;
@@ -2114,20 +2303,23 @@ export default function App() {
           return;
         }
       }
+      if (
+        d.typeRemarkKeys.includes(ITEM_TYPE_REMARK_PRESET_FITTING_ROOM) &&
+        (itemFilterColIdx.type >= 0 || itemFilterColIdx.sub >= 0)
+      ) {
+        const skinHits = dataBodyRows.filter(({ row }) =>
+          rowMatchesFittingRoomSkinPreset(row, itemFilterColIdx.type, itemFilterColIdx.sub),
+        ).length;
+        if (skinHits === 0) {
+          push("无匹配的试衣间皮肤行，请检查「物品类型/子类型」列");
+          return;
+        }
+      }
       const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
-      const visible =
-        nextFilter == null
-          ? new Set(dataBodyRows.map((r) => r.dataIdx))
-          : new Set(
-              dataBodyRows
-                .filter(({ row }) => rowPassesItemTableFilter(row, nextFilter, itemFilterColIdx))
-                .map((r) => r.dataIdx),
-            );
       if (!opts?.keepModalOpen) setItemFilterModalOpen(false);
       const applyFilterUpdate = () => {
         setConfig((c) => (c ? { ...c, itemTableFilter: nextFilter } : c));
-        setSelectedRows((prev) => new Set([...prev].filter((di) => visible.has(di))));
-        setSelectedRowOrder((order) => order.filter((di) => visible.has(di)));
+        pinSelectedRowsAfterFilterChange("item");
       };
       if (opts?.immediate) {
         applyFilterUpdate();
@@ -2136,7 +2328,7 @@ export default function App() {
       }
       void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
     },
-    [config, itemFilterDraft, dataBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
+    [config, itemFilterDraft, dataBodyRows, itemFilterColIdx, headers, saveItemTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
   );
 
   const updateItemFilterPersist = useCallback(
@@ -2166,26 +2358,27 @@ export default function App() {
             return c;
           }
         }
+        if (
+          d.typeRemarkKeys.includes(ITEM_TYPE_REMARK_PRESET_FITTING_ROOM) &&
+          (itemFilterColIdx.type >= 0 || itemFilterColIdx.sub >= 0)
+        ) {
+          const skinHits = dataBodyRows.filter(({ row }) =>
+            rowMatchesFittingRoomSkinPreset(row, itemFilterColIdx.type, itemFilterColIdx.sub),
+          ).length;
+          if (skinHits === 0) {
+            queueMicrotask(() => push("无匹配的试衣间皮肤行，请检查「物品类型/子类型」列"));
+            return c;
+          }
+        }
         const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
-        const visible =
-          nextFilter == null
-            ? new Set(dataBodyRows.map((r) => r.dataIdx))
-            : new Set(
-                dataBodyRows
-                  .filter(({ row }) => rowPassesItemTableFilter(row, nextFilter, itemFilterColIdx))
-                  .map((r) => r.dataIdx),
-              );
         queueMicrotask(() => {
           void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
-        });
-        startTransition(() => {
-          setSelectedRows((prev) => new Set([...prev].filter((di) => visible.has(di))));
-        setSelectedRowOrder((order) => order.filter((di) => visible.has(di)));
+          pinSelectedRowsAfterFilterChange("item");
         });
         return { ...c, itemTableFilter: nextFilter };
       });
     },
-    [itemFilterModalOpen, dataBodyRows, itemFilterColIdx, saveItemTableFilterToDisk, push],
+    [itemFilterModalOpen, dataBodyRows, itemFilterColIdx, headers, saveItemTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
   );
 
   const toggleItemFilterTypeRemarkKey = useCallback(
@@ -2273,26 +2466,54 @@ export default function App() {
         const next = updater(base);
         if (taskFilterModalOpen) setTaskFilterDraft(next);
         const nextFilter = taskTableFilterIsInactive(next) && !hasCustomTaskKeyOrder(next) ? null : next;
-        const visible =
-          nextFilter == null
-            ? new Set(dataBodyRows.map((r) => r.dataIdx))
-            : new Set(
-                dataBodyRows
-                  .filter(({ row }) => rowPassesTaskTableFilter(row, nextFilter, taskFilterColIdx))
-                  .map((r) => r.dataIdx),
-              );
         queueMicrotask(() => {
           void saveTaskTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
-        });
-        startTransition(() => {
-          setSelectedRows((prev) => new Set([...prev].filter((di) => visible.has(di))));
-        setSelectedRowOrder((order) => order.filter((di) => visible.has(di)));
+          pinSelectedRowsAfterFilterChange("task");
         });
         return { ...c, taskTableFilter: nextFilter };
       });
     },
-    [taskFilterModalOpen, dataBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
+    [taskFilterModalOpen, dataBodyRows, taskFilterColIdx, headers, saveTaskTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
   );
+
+  const setColumnValueFilterKeys = useCallback(
+    (colIndex: number, headerName: string, selectedKeys: string[]) => {
+      const key = columnFilterKey(headerName, colIndex);
+      if (isItemTableView) {
+        updateItemFilterPersist((d) => {
+          const next = cloneColumnValueFilters(d.columnValueFilters);
+          if (selectedKeys.length === 0) delete next[key];
+          else next[key] = [...selectedKeys];
+          return { ...d, columnValueFilters: next };
+        });
+        return;
+      }
+      if (isTaskTableView) {
+        updateTaskFilterPersist((d) => {
+          const next = cloneColumnValueFilters(d.columnValueFilters);
+          if (selectedKeys.length === 0) delete next[key];
+          else next[key] = [...selectedKeys];
+          return { ...d, columnValueFilters: next };
+        });
+      }
+    },
+    [isItemTableView, isTaskTableView, updateItemFilterPersist, updateTaskFilterPersist],
+  );
+
+  const applyColumnValueFilter = useCallback(
+    (selectedKeys: string[]) => {
+      if (!columnFilterPopover) return;
+      setColumnValueFilterKeys(columnFilterPopover.colIndex, columnFilterPopover.headerName, selectedKeys);
+      setColumnFilterPopover(null);
+    },
+    [columnFilterPopover, setColumnValueFilterKeys],
+  );
+
+  const clearColumnValueFilterForPopover = useCallback(() => {
+    if (!columnFilterPopover) return;
+    setColumnValueFilterKeys(columnFilterPopover.colIndex, columnFilterPopover.headerName, []);
+    setColumnFilterPopover(null);
+  }, [columnFilterPopover, setColumnValueFilterKeys]);
 
   const toggleTaskFilterTaskTypeKey = useCallback(
     (key: string) => {
@@ -2454,19 +2675,10 @@ export default function App() {
       if (!config) return;
       const d = draftOverride ?? taskFilterDraft;
       const nextFilter = taskTableFilterIsInactive(d) && !hasCustomTaskKeyOrder(d) ? null : d;
-      const visible =
-        nextFilter == null
-          ? new Set(dataBodyRows.map((r) => r.dataIdx))
-          : new Set(
-              dataBodyRows
-                .filter(({ row }) => rowPassesTaskTableFilter(row, nextFilter, taskFilterColIdx))
-                .map((r) => r.dataIdx),
-            );
       if (!opts?.keepModalOpen) setTaskFilterModalOpen(false);
       const applyFilterUpdate = () => {
         setConfig((c) => (c ? { ...c, taskTableFilter: nextFilter } : c));
-        setSelectedRows((prev) => new Set([...prev].filter((di) => visible.has(di))));
-        setSelectedRowOrder((order) => order.filter((di) => visible.has(di)));
+        pinSelectedRowsAfterFilterChange("task");
       };
       if (opts?.immediate) {
         applyFilterUpdate();
@@ -2475,7 +2687,7 @@ export default function App() {
       }
       void saveTaskTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
     },
-    [config, taskFilterDraft, dataBodyRows, taskFilterColIdx, saveTaskTableFilterToDisk, push],
+    [config, taskFilterDraft, dataBodyRows, taskFilterColIdx, headers, saveTaskTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
   );
 
   const clearSavedTableFilter = useCallback(() => {
@@ -2710,10 +2922,13 @@ export default function App() {
   const clearRowSelection = useCallback(() => {
     setSelectedRows(new Set());
     setSelectedRowOrder([]);
+    setItemLineWear({});
+    setWearRowOverride(new Set());
   }, []);
 
   useEffect(() => {
     selectedRowsRef.current = selectedRows;
+    pinAutoSuppressedRef.current = false;
   }, [selectedRows]);
 
   useEffect(() => {
@@ -2723,6 +2938,67 @@ export default function App() {
   useEffect(() => {
     itemLineQtyRef.current = itemLineQty;
   }, [itemLineQty]);
+
+  useEffect(() => {
+    defaultWearValueRef.current = defaultWearValue;
+  }, [defaultWearValue]);
+
+  useEffect(() => {
+    itemLineWearRef.current = itemLineWear;
+  }, [itemLineWear]);
+
+  useEffect(() => {
+    wearRowOverrideRef.current = wearRowOverride;
+  }, [wearRowOverride]);
+
+  useEffect(() => {
+    itemLineDurabilityRef.current = itemLineDurability;
+  }, [itemLineDurability]);
+
+  useEffect(() => {
+    durabilityRowOverrideRef.current = durabilityRowOverride;
+  }, [durabilityRowOverride]);
+
+  useEffect(() => {
+    selectableVisibleDataIdxsRef.current = selectableVisibleDataIdxs;
+  }, [selectableVisibleDataIdxs]);
+
+  const getSendItemsWearOptsForAoa = useCallback(
+    (aoa: SheetMatrix): SendItemsWearOptions | undefined => {
+      const headersRow = aoa[0]?.map((h) => cellStr(h)) ?? [];
+      const typeCol = resolveItemRowTypeColumnIndex(headersRow);
+      const typeRemarkCol = resolveTypeRemarkColumnIndex(headersRow);
+      const initDurCol = resolveInitDurabilityColumnIndex(headersRow);
+      if (typeCol < 0 && typeRemarkCol < 0 && initDurCol < 0) return undefined;
+      return {
+        defaultWearValue: defaultWearValueRef.current,
+        itemLineWear: itemLineWearRef.current,
+        wearRowOverride: wearRowOverrideRef.current,
+        typeCol,
+        typeRemarkCol,
+        initDurCol,
+        itemLineDurability: itemLineDurabilityRef.current,
+        durabilityRowOverride: durabilityRowOverrideRef.current,
+      };
+    },
+    [],
+  );
+
+  const rowSupportsWearForTable = useCallback(
+    (row: unknown[]) => rowSupportsWearValue(row, itemTypeColIndex, itemFilterColIdx.tr),
+    [itemTypeColIndex, itemFilterColIdx.tr],
+  );
+
+  const rowSupportsDurabilityForTable = useCallback(
+    (row: unknown[]) =>
+      rowSupportsDurabilityValue(row, itemTypeColIndex, itemFilterColIdx.tr, itemFilterColIdx.initDur),
+    [itemTypeColIndex, itemFilterColIdx.tr, itemFilterColIdx.initDur],
+  );
+
+  const rowDurabilityMaxForTable = useCallback(
+    (row: unknown[]) => rowInitDurabilityMax(row, itemFilterColIdx.initDur),
+    [itemFilterColIdx.initDur],
+  );
 
   const switchActiveView = useCallback(
     (next: ActiveView) => {
@@ -2734,6 +3010,10 @@ export default function App() {
             selectedRowsRef.current,
             selectedRowOrderRef.current,
             itemLineQtyRef.current,
+            itemLineWearRef.current,
+            wearRowOverrideRef.current,
+            itemLineDurabilityRef.current,
+            durabilityRowOverrideRef.current,
           ),
         );
       }
@@ -2744,6 +3024,10 @@ export default function App() {
       if (!nextKey) {
         clearRowSelection();
         setItemLineQty({});
+        setItemLineWear({});
+        setWearRowOverride(new Set());
+        setItemLineDurability({});
+        setDurabilityRowOverride(new Set());
         return;
       }
 
@@ -2753,12 +3037,30 @@ export default function App() {
         setSelectedRows(restored.selectedRows);
         setSelectedRowOrder(restored.selectedRowOrder);
         setItemLineQty(restored.itemLineQty);
+        setItemLineWear(restored.itemLineWear);
+        setWearRowOverride(restored.wearRowOverride);
+        setItemLineDurability(restored.itemLineDurability);
+        setDurabilityRowOverride(restored.durabilityRowOverride);
       } else {
         clearRowSelection();
         setItemLineQty({});
+        setItemLineWear({});
+        setWearRowOverride(new Set());
+        setItemLineDurability({});
+        setDurabilityRowOverride(new Set());
+        if ((next.kind === "template" || next.kind === "snapshot") && config) {
+          const tpl = config.savedTemplates.find((t) => t.id === next.id);
+          if (tpl?.source === "item" && tpl.items.length > 0 && tpl.aoa?.length) {
+            const hydrated = hydrateItemValuesFromTemplateItems(tpl.aoa, tpl.items);
+            setItemLineWear(hydrated.itemLineWear);
+            setWearRowOverride(hydrated.wearRowOverride);
+            setItemLineDurability(hydrated.itemLineDurability);
+            setDurabilityRowOverride(hydrated.durabilityRowOverride);
+          }
+        }
       }
     },
-    [activeView, clearRowSelection],
+    [activeView, clearRowSelection, config],
   );
 
   const removeSelectedDataIdx = useCallback((dataIdx: number) => {
@@ -2782,21 +3084,33 @@ export default function App() {
     });
   }, [selectableVisibleDataIdxs]);
 
+  const scrollTableToTop = useCallback(() => {
+    scrollBodyToTop();
+  }, [scrollBodyToTop]);
+
+  useEffect(() => {
+    if (!tableSort) return;
+    scrollTableToTop();
+  }, [tableSort, scrollTableToTop]);
+
   const handlePinButtonClick = useCallback(() => {
     if (visibleSelectedCount > 0) {
-      const toAdd = visibleDataIdxs.filter((di) => selectedRows.has(di));
+      const toAdd = selectableVisibleDataIdxs.filter((di) => selectedRows.has(di));
+      pinAutoSuppressedRef.current = false;
       if (isItemTableView) {
         setPinnedRowOrder((p) => ({
           ...p,
-          item: mergePinnedOrder(p.item, toAdd, selectedRowOrder),
+          item: pinSelectionToFront(p.item, toAdd, selectedRowOrder),
         }));
       } else if (isTaskTableView) {
         setPinnedRowOrder((p) => ({
           ...p,
-          task: mergePinnedOrder(p.task, toAdd, selectedRowOrder),
+          task: pinSelectionToFront(p.task, toAdd, selectedRowOrder),
         }));
       }
+      scrollTableToTop();
     } else if (pinActive) {
+      pinAutoSuppressedRef.current = true;
       if (isItemTableView) {
         setPinnedRowOrder((p) => ({ ...p, item: [] }));
       } else if (isTaskTableView) {
@@ -2805,19 +3119,17 @@ export default function App() {
     }
   }, [
     visibleSelectedCount,
-    visibleDataIdxs,
+    selectableVisibleDataIdxs,
     selectedRows,
     selectedRowOrder,
     isItemTableView,
     isTaskTableView,
     pinActive,
+    scrollTableToTop,
   ]);
 
-  const scrollTableToTop = useCallback(() => {
-    scrollBodyToTop();
-  }, [scrollBodyToTop]);
-
-  const canBoxSelect = Boolean(currentAoa) && activeView.kind !== "addExp";
+  const canBoxSelect =
+    Boolean(currentAoa) && activeView.kind !== "addExp" && activeView.kind !== "uploadConfig";
 
   const isBoxSelectInteractiveTarget = (t: EventTarget | null): boolean => {
     const el = t instanceof HTMLElement ? t : null;
@@ -2948,6 +3260,17 @@ export default function App() {
       delete next[dataIdx];
       return next;
     });
+    setItemLineWear((w) => {
+      const next = { ...w };
+      delete next[dataIdx];
+      return next;
+    });
+    setWearRowOverride((prev) => {
+      if (!prev.has(dataIdx)) return prev;
+      const n = new Set(prev);
+      n.delete(dataIdx);
+      return n;
+    });
   }, []);
 
   const bumpItemLineQty = useCallback(
@@ -2979,6 +3302,35 @@ export default function App() {
     },
     [deselectItemRow],
   );
+
+  const setItemLineWearValue = useCallback((dataIdx: number, value: number) => {
+    setWearRowOverride((prev) => {
+      const n = new Set(prev);
+      n.add(dataIdx);
+      return n;
+    });
+    setItemLineWear((w) => ({ ...w, [dataIdx]: clampItemWearValue(value) }));
+  }, []);
+
+  const setItemLineDurabilityValue = useCallback(
+    (dataIdx: number, value: number) => {
+      if (!currentAoa?.length) return;
+      const row = currentAoa[dataIdx + 1];
+      if (!row) return;
+      const max = rowInitDurabilityMax(row, itemFilterColIdx.initDur);
+      setDurabilityRowOverride((prev) => {
+        const n = new Set(prev);
+        n.add(dataIdx);
+        return n;
+      });
+      setItemLineDurability((d) => ({ ...d, [dataIdx]: clampItemDurability(value, max) }));
+    },
+    [currentAoa, itemFilterColIdx.initDur],
+  );
+
+  const setDefaultWearValueFromSlider = useCallback((value: number) => {
+    setDefaultWearValue(clampItemWearValue(value));
+  }, []);
 
   const toggleHideColumn = async (header: string, hide: boolean) => {
     if (!config || activeView.kind === "template" || activeView.kind === "snapshot") return;
@@ -3047,6 +3399,46 @@ export default function App() {
     },
     [addExpPresetDeps, addExpPresetBusy],
   );
+
+  const clearMatchDeps = useMemo((): ClearTimeoutMatchInfoDeps | null => {
+    if (!config) return null;
+    return {
+      config,
+      gmtAccountIdDraft,
+      ensureGmtLoggedIn,
+      logGmt,
+    };
+  }, [config, gmtAccountIdDraft, ensureGmtLoggedIn, logGmt]);
+
+  const runClearTimeoutMatch = useCallback(async () => {
+    if (!clearMatchDeps || clearMatchBusy) return;
+    setClearMatchBusy(true);
+    try {
+      await runClearTimeoutMatchInfo(clearMatchDeps);
+    } finally {
+      setClearMatchBusy(false);
+    }
+  }, [clearMatchDeps, clearMatchBusy]);
+
+  const addSproutDeps = useMemo((): AddSproutScoreDeps | null => {
+    if (!config) return null;
+    return {
+      config,
+      gmtAccountIdDraft,
+      ensureGmtLoggedIn,
+      logGmt,
+    };
+  }, [config, gmtAccountIdDraft, ensureGmtLoggedIn, logGmt]);
+
+  const runAddSproutOneClick = useCallback(async () => {
+    if (!addSproutDeps || addSproutBusy) return;
+    setAddSproutBusy(true);
+    try {
+      await runAddSproutScore(addSproutDeps);
+    } finally {
+      setAddSproutBusy(false);
+    }
+  }, [addSproutDeps, addSproutBusy]);
 
   const notify = useCallback(
     (
@@ -3236,7 +3628,13 @@ export default function App() {
     if (source === "item") {
       const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
       const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-      items = buildSendItemsFromSelection(currentAoa, selectedRows, itemLineQty, ridx);
+      items = buildSendItemsFromSelection(
+        currentAoa,
+        selectedRows,
+        itemLineQty,
+        ridx,
+        getSendItemsWearOptsForAoa(currentAoa),
+      );
     }
     const now = Date.now();
     const rowCount = built.idxs.length;
@@ -3267,7 +3665,7 @@ export default function App() {
       aoa,
       items,
     };
-    await persist({ ...config, savedTemplates: [...list, tpl] });
+    await persist(appendSidebarCardToLayout({ ...config, savedTemplates: [...list, tpl] }, templateSidebarCardId(tpl.id)));
     setTemplateNameModal(null);
     setTemplateNameDraft("");
     switchActiveView({ kind: "template", id: tpl.id });
@@ -3298,20 +3696,20 @@ export default function App() {
     const removed = config.savedTemplates.find((t) => t.id === id);
     if (!removed) return;
     const list = config.savedTemplates.filter((t) => t.id !== id);
-    const order =
-      config.sidebarTemplateOrder == null
-        ? null
-        : config.sidebarTemplateOrder.filter((tid) => tid !== id);
     const recycled = [
       ...(config.recycledTemplates ?? []),
       { template: removed, deletedAt: Date.now() },
     ];
-    await persist({
-      ...config,
-      savedTemplates: list,
-      recycledTemplates: recycled,
-      sidebarTemplateOrder: order,
-    });
+    const cardId = templateSidebarCardId(id);
+    const nextConfig = removeSidebarCardFromLayout(
+      {
+        ...config,
+        savedTemplates: list,
+        recycledTemplates: recycled,
+      },
+      cardId,
+    );
+    await persist(nextConfig);
     selectionByViewRef.current.delete(`template:${id}`);
     if ((activeView.kind === "template" || activeView.kind === "snapshot") && activeView.id === id) {
       switchActiveView({ kind: removed.source === "task" ? "task" : "item" });
@@ -3338,16 +3736,15 @@ export default function App() {
       list.shift();
     }
     const recycled = (config.recycledTemplates ?? []).filter((r) => r.template.id !== id);
-    let order = config.sidebarTemplateOrder;
-    if (order != null && !order.includes(id)) {
-      order = [...order, id];
-    }
-    await persist({
-      ...config,
-      savedTemplates: list,
-      recycledTemplates: recycled,
-      sidebarTemplateOrder: order,
-    });
+    const nextConfig = appendSidebarCardToLayout(
+      {
+        ...config,
+        savedTemplates: list,
+        recycledTemplates: recycled,
+      },
+      templateSidebarCardId(id),
+    );
+    await persist(nextConfig);
     notify(`已还原模板「${entry.template.title}」`, {
       action: "还原模板",
       outcome: "success",
@@ -3359,7 +3756,8 @@ export default function App() {
     if (!config) return;
     const envName = config.gmtEnvName;
     const accountId = gmtAccountIdDraft.trim();
-    const mergedPreview = mergeSendTemplateItems(items);
+    const enriched = enrichSendItemsFromItemSheet(items, itemAoa, defaultWearValueRef.current);
+    const mergedPreview = mergeSendTemplateItems(enriched);
 
     if (!(await ensureGmtLoggedIn())) {
       logGmt({
@@ -3438,6 +3836,7 @@ export default function App() {
       config,
       accountId,
       resolveGmtEnvDisplayLabel(config),
+      itemAoa,
     );
     logGmt({
       action: "GMT 发放道具",
@@ -3475,18 +3874,20 @@ export default function App() {
   ]);
 
   const ctxMenuPos = useClampedMenuPosition(ctxMenu, ctxMenuRef, ctxMenuContentKey);
-  const columnHeaderMenuAnchor = columnHeaderMenu
-    ? { x: columnHeaderMenu.x, y: columnHeaderMenu.y }
-    : null;
   const columnHeaderMenuPos = useClampedMenuPosition(
-    columnHeaderMenuAnchor,
+    columnHeaderMenu,
     columnHeaderMenuRef,
     columnHeaderMenu?.headerName ?? null,
   );
 
   const openGlobalSendDialog = useCallback(
     (items: SendTemplateItem[], hint: string) => {
-      const merged = mergeSendTemplateItems(items);
+      const enriched = enrichSendItemsFromItemSheet(
+        items,
+        itemAoa,
+        defaultWearValueRef.current,
+      );
+      const merged = mergeSendTemplateItems(enriched);
       if (merged.length === 0) {
         logGmt({
           action: "GMT 全服邮件",
@@ -3502,7 +3903,7 @@ export default function App() {
       }
       setGlobalSendModal({ items: merged, hint });
     },
-    [config?.gmtEnvName, gmtAccountIdDraft, logGmt],
+    [config?.gmtEnvName, gmtAccountIdDraft, logGmt, itemAoa],
   );
 
   const saveGlobalSendLastForm = useCallback(
@@ -3548,14 +3949,19 @@ export default function App() {
           });
           return;
         }
-        const result = await execAdminSendGlobalMail(payload.items, config, {
-          region: config.gmtLockRegion,
-          title: payload.title,
-          content: payload.content,
-          senderName: payload.senderName,
-          startTime: payload.startTime,
-          endTime: payload.endTime,
-        });
+        const result = await execAdminSendGlobalMail(
+          payload.items,
+          config,
+          {
+            region: config.gmtLockRegion,
+            title: payload.title,
+            content: payload.content,
+            senderName: payload.senderName,
+            startTime: payload.startTime,
+            endTime: payload.endTime,
+          },
+          itemAoa,
+        );
         logGmt({
           action: "GMT 全服邮件",
           outcome: result.ok ? "success" : "failure",
@@ -3572,7 +3978,7 @@ export default function App() {
         setGlobalSendSubmitting(false);
       }
     },
-    [config, gmtAccountIdDraft, ensureGmtLoggedIn, logGmt],
+    [config, gmtAccountIdDraft, ensureGmtLoggedIn, logGmt, itemAoa],
   );
 
   const openGlobalSendFromTableContext = useCallback(() => {
@@ -3585,7 +3991,13 @@ export default function App() {
     }
     const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
     const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-    const items = buildSendItemsFromSelection(currentAoa, selectedRows, itemLineQty, ridx);
+    const items = buildSendItemsFromSelection(
+      currentAoa,
+      selectedRows,
+      itemLineQty,
+      ridx,
+      getSendItemsWearOptsForAoa(currentAoa),
+    );
     openGlobalSendDialog(items, "表格右键 · 当前勾选");
   }, [
     config,
@@ -3593,6 +4005,7 @@ export default function App() {
     activeView,
     selectedRows,
     itemLineQty,
+    getSendItemsWearOptsForAoa,
     itemServerWideUi.entriesEnabled,
     openGlobalSendDialog,
     push,
@@ -3612,10 +4025,16 @@ export default function App() {
       if (tpl.source !== "item") return;
       const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
       const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-      const items = buildSendItemsFromSelection(currentAoa, selectedRows, itemLineQty, ridx);
+      const items = buildSendItemsFromSelection(
+        currentAoa,
+        selectedRows,
+        itemLineQty,
+        ridx,
+        getSendItemsWearOptsForAoa(currentAoa),
+      );
       await sendTemplateItemsNow(tpl.title, items);
     },
-    [config, currentAoa, activeView, selectedRows, itemLineQty, push],
+    [config, currentAoa, activeView, selectedRows, itemLineQty, getSendItemsWearOptsForAoa, push],
   );
 
   const appendRowsToTemplate = useCallback(
@@ -3646,7 +4065,13 @@ export default function App() {
       if (tpl.source === "item") {
         const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
         const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-        const newItems = buildSendItemsFromSelection(currentAoa, rows, itemLineQty, ridx);
+        const newItems = buildSendItemsFromSelection(
+          currentAoa,
+          rows,
+          itemLineQty,
+          ridx,
+          getSendItemsWearOptsForAoa(currentAoa),
+        );
         nextItems = mergeSendTemplateItems([...tpl.items, ...newItems]);
       }
       const list = config.savedTemplates.map((t) =>
@@ -3656,7 +4081,7 @@ export default function App() {
       clearRowSelection();
       push(`已追加到模板「${tpl.title}」（${built.idxs.length} 行）`);
     },
-    [config, currentAoa, activeView, itemLineQty, push, persist, clearRowSelection],
+    [config, currentAoa, activeView, itemLineQty, getSendItemsWearOptsForAoa, push, persist, clearRowSelection],
   );
 
   const appendSelectedRowsToTemplate = useCallback(
@@ -3666,6 +4091,108 @@ export default function App() {
     },
     [appendRowsToTemplate, selectedRows],
   );
+
+  const removeRowsFromCurrentTemplate = useCallback(async () => {
+    if (!config || !currentAoa || !ctxMenu) return;
+    if (activeView.kind !== "template" && activeView.kind !== "snapshot") return;
+
+    const tpl = config.savedTemplates.find((t) => t.id === activeView.id);
+    if (!tpl?.aoa?.length) return;
+
+    const rows = resolveTemplateRowsToDelete(ctxMenu.dataIdx, selectedRows);
+    if (rows.size === 0) {
+      closeCtx();
+      push("请先选择要删除的行");
+      return;
+    }
+
+    const rowCount = rows.size;
+    closeCtx();
+
+    const nextAoa = removeDataRowsFromAoa(tpl.aoa, rows);
+    let nextItems = tpl.items;
+
+    if (tpl.source === "item") {
+      const dataRowCount = tpl.aoa.length - 1;
+      const remainingOldIdxs: number[] = [];
+      for (let i = 0; i < dataRowCount; i++) {
+        if (!rows.has(i)) remainingOldIdxs.push(i);
+      }
+
+      const remappedQty: Record<number, number> = {};
+      const remappedWear: Record<number, number> = {};
+      const remappedDur: Record<number, number> = {};
+      const remappedWearOverride = new Set<number>();
+      const remappedDurOverride = new Set<number>();
+      remainingOldIdxs.forEach((oldIdx, newIdx) => {
+        if (itemLineQty[oldIdx] != null) remappedQty[newIdx] = itemLineQty[oldIdx];
+        if (itemLineWear[oldIdx] != null) remappedWear[newIdx] = itemLineWear[oldIdx];
+        if (itemLineDurability[oldIdx] != null) remappedDur[newIdx] = itemLineDurability[oldIdx];
+        if (wearRowOverride.has(oldIdx)) remappedWearOverride.add(newIdx);
+        if (durabilityRowOverride.has(oldIdx)) remappedDurOverride.add(newIdx);
+      });
+
+      const headersRow = nextAoa[0]?.map((h) => cellStr(h)) ?? [];
+      const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
+      const allRemaining = new Set(remainingOldIdxs.map((_, newIdx) => newIdx));
+      const typeCol = resolveItemRowTypeColumnIndex(headersRow);
+      const typeRemarkCol = resolveTypeRemarkColumnIndex(headersRow);
+      const initDurCol = resolveInitDurabilityColumnIndex(headersRow);
+      const wearOpts: SendItemsWearOptions | undefined =
+        typeCol >= 0 || typeRemarkCol >= 0 || initDurCol >= 0
+          ? {
+              defaultWearValue,
+              itemLineWear: remappedWear,
+              wearRowOverride: remappedWearOverride,
+              typeCol,
+              typeRemarkCol,
+              initDurCol,
+              itemLineDurability: remappedDur,
+              durabilityRowOverride: remappedDurOverride,
+            }
+          : undefined;
+
+      nextItems = mergeSendTemplateItems(
+        buildSendItemsFromSelection(nextAoa, allRemaining, remappedQty, ridx, wearOpts),
+      );
+    }
+
+    const list = config.savedTemplates.map((t) =>
+      t.id === tpl.id ? { ...t, aoa: nextAoa, items: nextItems } : t,
+    );
+    await persist({ ...config, savedTemplates: list });
+
+    clearRowSelection();
+    setItemLineQty({});
+
+    if (tpl.source === "item") {
+      const hydrated = hydrateItemValuesFromTemplateItems(nextAoa, nextItems);
+      setItemLineWear(hydrated.itemLineWear);
+      setWearRowOverride(hydrated.wearRowOverride);
+      setItemLineDurability(hydrated.itemLineDurability);
+      setDurabilityRowOverride(hydrated.durabilityRowOverride);
+    } else {
+      setItemLineDurability({});
+      setDurabilityRowOverride(new Set());
+    }
+
+    push(`已从模板「${tpl.title}」删除 ${rowCount} 行`);
+  }, [
+    config,
+    currentAoa,
+    ctxMenu,
+    activeView,
+    selectedRows,
+    itemLineQty,
+    itemLineWear,
+    wearRowOverride,
+    itemLineDurability,
+    durabilityRowOverride,
+    defaultWearValue,
+    push,
+    persist,
+    clearRowSelection,
+  ]);
 
   const currentTableSource = useMemo(
     () => (config ? getCurrentTableSource(activeView, config) : null),
@@ -3872,7 +4399,13 @@ export default function App() {
       const envName = config.gmtEnvName;
       const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
       const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
-      const previewItems = buildSendItemsFromSelection(currentAoa, selectedRows, itemLineQty, ridx);
+      const previewItems = buildSendItemsFromSelection(
+        currentAoa,
+        selectedRows,
+        itemLineQty,
+        ridx,
+        getSendItemsWearOptsForAoa(currentAoa),
+      );
 
       if (!(await ensureGmtLoggedIn())) {
         logGmt({
@@ -3916,6 +4449,7 @@ export default function App() {
         config,
         accountId,
         resolveGmtEnvDisplayLabel(config),
+        itemAoa,
       );
       const toastMsg = result.ok ? `${result.message}（${idxs.length} 行）` : result.message;
       logGmt({
@@ -4006,7 +4540,7 @@ export default function App() {
       selectedDataIdxs: selectedRows,
     });
     notify(result.toast, {
-      action: "GTOP 接取任务",
+      action: "GTOP 接取",
       outcome: result.ok ? "success" : "failure",
       detail: result.ok ? undefined : result.message,
       context: result.ok ? `接取 ${result.acceptedCount} 个任务` : undefined,
@@ -4045,7 +4579,7 @@ export default function App() {
     const envId = config.gtopEnvId?.trim() ?? "";
     const regionId = config.gtopRegionServerId?.trim() ?? "";
     if (!envId || !regionId) {
-      push("请先在设置 → GTOP 接取任务 中配置默认环境与分支环境");
+      push("请先在设置 → GTOP 中配置默认环境与分支环境");
       setSettingsOpen(true);
       return;
     }
@@ -4080,6 +4614,244 @@ export default function App() {
       setRestoreDefaultTaskCsvBusy(false);
     }
   }, [config, gtopLoggedIn, isTaskTableView, notify, push]);
+
+  const ensureGtopUploadReady = useCallback((): {
+    envLabel: string;
+    serverLabel: string;
+  } | null => {
+    if (!config) return null;
+    if (!gtopLoggedIn) {
+      notify("未登录 GTOP", {
+        action: "GTOP 上传配置",
+        outcome: "failure",
+        detail: "未登录 GTOP",
+        context: config.gtopEnvName ?? undefined,
+      });
+      return null;
+    }
+    const envId = config.gtopEnvId?.trim() ?? "";
+    const regionId = config.gtopRegionServerId?.trim() ?? "";
+    if (!envId || !regionId) {
+      push("请先在设置 → GTOP 中配置默认环境与分支环境");
+      setSettingsOpen(true);
+      return null;
+    }
+    return {
+      envLabel: config.gtopEnvName?.trim() || envId,
+      serverLabel: config.gtopRegionServerName?.trim() || regionId,
+    };
+  }, [config, gtopLoggedIn, notify, push]);
+
+  const runUploadConfigBatch = useCallback(
+    async (localPaths: string[]): Promise<void> => {
+      if (!config || uploadConfigBusy || localPaths.length === 0) return;
+      const labels = ensureGtopUploadReady();
+      if (!labels) return;
+      const { envLabel, serverLabel } = labels;
+      const actionLabel = "GTOP 上传配置 CSV";
+
+      const confirmMsg = formatUploadConfirmMessage({
+        envLabel,
+        serverLabel,
+        localPaths,
+      });
+      if (!window.confirm(confirmMsg)) return;
+
+      setUploadConfigBusy(true);
+      setUploadConfigProgress(null);
+      try {
+        const result = await uploadLocalConfigCsvsToGtop({
+          config,
+          gtopLoggedIn,
+          localPaths,
+          onProgress: (current, total, csvFilename) => {
+            setUploadConfigProgress(`上传中 ${current}/${total}：${csvFilename}`);
+          },
+        });
+        const succeeded = result.results.filter((r) => r.ok).map((r) => r.csvFilename);
+        if (succeeded.length > 0) {
+          await persist(markModifiedConfigCsvBatch(config, succeeded));
+        }
+        const outcome: OperationOutcome =
+          result.okCount > 0 && result.failCount === 0
+            ? "success"
+            : result.okCount > 0
+              ? "info"
+              : "failure";
+        notify(result.toast, {
+          action: actionLabel,
+          outcome,
+          detail: result.failCount > 0 ? `失败 ${result.failCount} 个` : undefined,
+          context: `${envLabel} / ${serverLabel}`,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        notify(`${actionLabel}失败: ${msg}`, {
+          action: actionLabel,
+          outcome: "failure",
+          detail: msg,
+          context: `${envLabel} / ${serverLabel}`,
+        });
+      } finally {
+        setUploadConfigBusy(false);
+        setUploadConfigProgress(null);
+      }
+    },
+    [config, ensureGtopUploadReady, gtopLoggedIn, notify, persist, uploadConfigBusy],
+  );
+
+  const pickAndUploadConfigCsvs = useCallback(async () => {
+    if (!config || uploadConfigBusy) return;
+    const picked = await open({
+      multiple: true,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+      title: "选择要上传的配置 CSV",
+    });
+    if (picked == null) return;
+    const raw = Array.isArray(picked) ? picked : [picked];
+    const localPaths = dedupeCsvPathsByBasename(
+      raw.filter((p): p is string => typeof p === "string"),
+    );
+    if (localPaths.length === 0) {
+      push("未选择有效的 CSV 文件");
+      return;
+    }
+    await runUploadConfigBatch(localPaths);
+  }, [config, push, runUploadConfigBatch, uploadConfigBusy]);
+
+  const modifiedConfigCsvFilenames = useMemo(
+    () => (config ? listModifiedConfigCsvFilenames(config) : []),
+    [config],
+  );
+
+  const restoreWorkspaceConfigCsvs = useCallback(async () => {
+    if (!config || uploadConfigBusy) return;
+    const filenames = listModifiedConfigCsvFilenames(config);
+    if (filenames.length === 0) {
+      push("当前没有需要恢复的配置 CSV");
+      return;
+    }
+    const labels = ensureGtopUploadReady();
+    if (!labels) return;
+    const { envLabel, serverLabel } = labels;
+    const actionLabel = "GTOP 恢复工作区配置";
+
+    const confirmMsg = formatRestoreConfirmMessage({
+      envLabel,
+      serverLabel,
+      filenames,
+    });
+    if (!window.confirm(confirmMsg)) return;
+
+    setUploadConfigBusy(true);
+    setUploadConfigProgress(null);
+    try {
+      const result = await restoreModifiedWorkspaceConfigCsvsViaGtop({
+        config,
+        gtopLoggedIn,
+        onProgress: (current, total, csvFilename) => {
+          setUploadConfigProgress(`恢复中 ${current}/${total}：${csvFilename}`);
+        },
+      });
+      const restored = result.results.filter((r) => r.ok).map((r) => r.csvFilename);
+      if (restored.length > 0) {
+        await persist(clearModifiedConfigCsvBatch(config, restored));
+      }
+      const outcome: OperationOutcome =
+        result.okCount > 0 && result.failCount === 0
+          ? "success"
+          : result.okCount > 0
+            ? "info"
+            : "failure";
+      notify(result.toast, {
+        action: actionLabel,
+        outcome,
+        detail: result.failCount > 0 ? `失败 ${result.failCount} 个` : undefined,
+        context: `${envLabel} / ${serverLabel}`,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      notify(`${actionLabel}失败: ${msg}`, {
+        action: actionLabel,
+        outcome: "failure",
+        detail: msg,
+        context: `${envLabel} / ${serverLabel}`,
+      });
+    } finally {
+      setUploadConfigBusy(false);
+      setUploadConfigProgress(null);
+    }
+  }, [config, ensureGtopUploadReady, gtopLoggedIn, notify, persist, push, uploadConfigBusy]);
+
+  const restoreSingleModifiedConfigCsv = useCallback(
+    async (csvFilename: string) => {
+      if (!config || uploadConfigBusy) return;
+      const labels = ensureGtopUploadReady();
+      if (!labels) return;
+      const { envLabel, serverLabel } = labels;
+      const actionLabel = "GTOP 恢复默认配置";
+
+      const root = config.excelWorkspaceRoot?.trim() ?? "";
+      if (!root) {
+        push("请先配置 Excel 工作区路径");
+        return;
+      }
+
+      let localPath: string;
+      try {
+        const resolved = await resolveWorkspacePathsForFilenames(root, [csvFilename]);
+        if (resolved.paths.length === 0) {
+          push("工作区 Config 目录下未找到对应 CSV");
+          return;
+        }
+        localPath = resolved.paths[0]!;
+      } catch (e) {
+        push(e instanceof Error ? e.message : String(e));
+        return;
+      }
+
+      const confirmMsg = formatSingleRestoreConfirmMessage({
+        envLabel,
+        serverLabel,
+        csvFilename,
+        localPath,
+      });
+      if (!window.confirm(confirmMsg)) return;
+
+      setUploadConfigBusy(true);
+      setRestoringConfigFilename(csvFilename);
+      setUploadConfigProgress(`恢复中：${csvFilename}`);
+      try {
+        const result = await restoreSingleModifiedConfigCsvViaGtop({
+          config,
+          gtopLoggedIn,
+          csvFilename,
+        });
+        if (result.ok) {
+          await persist(clearModifiedConfigCsv(config, csvFilename));
+        }
+        notify(result.toast, {
+          action: actionLabel,
+          outcome: result.ok ? "success" : "failure",
+          detail: result.ok ? undefined : result.results[0]?.message,
+          context: `${envLabel} / ${serverLabel}`,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        notify(`${actionLabel}失败: ${msg}`, {
+          action: actionLabel,
+          outcome: "failure",
+          detail: msg,
+          context: `${envLabel} / ${serverLabel}`,
+        });
+      } finally {
+        setUploadConfigBusy(false);
+        setRestoringConfigFilename(null);
+        setUploadConfigProgress(null);
+      }
+    },
+    [config, ensureGtopUploadReady, gtopLoggedIn, notify, persist, push, uploadConfigBusy],
+  );
 
   const completeNextTaskFromPinned = () => {
     if (activeView.kind !== "task") {
@@ -4522,12 +5294,18 @@ export default function App() {
                     <th>物品 ID</th>
                     <th>名称/备注</th>
                     <th>数量</th>
+                    <th>耐久</th>
                     <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {sendTemplateModal.draftItems.map((it, idx) => (
-                    <tr key={`${it.itemId}-${idx}`}>
+                  {sendTemplateModal.draftItems.map((it, idx) => {
+                    const durMax =
+                      it.durabilityValue != null
+                        ? itemDurabilityMaxForSendItem(itemAoa, it.itemId) ?? it.durabilityValue
+                        : undefined;
+                    return (
+                    <tr key={`${it.itemId}-${it.wearValue ?? "n"}-${it.durabilityValue ?? "d"}-${idx}`}>
                       <td>{it.itemId}</td>
                       <td>{it.label?.trim() ? it.label : "—"}</td>
                       <td>
@@ -4551,6 +5329,49 @@ export default function App() {
                             );
                           }}
                         />
+                      </td>
+                      <td className="send-template-dur-cell">
+                        {it.wearValue != null ? (
+                          <ItemValueSlider
+                            value={it.wearValue}
+                            min={0}
+                            max={100}
+                            rangeHint="0–100"
+                            onChange={(wearValue) =>
+                              setSendTemplateModal((m) =>
+                                m
+                                  ? {
+                                      ...m,
+                                      draftItems: m.draftItems.map((row, i) =>
+                                        i === idx ? { ...row, wearValue } : row,
+                                      ),
+                                    }
+                                  : m,
+                              )
+                            }
+                          />
+                        ) : it.durabilityValue != null && durMax != null ? (
+                          <ItemValueSlider
+                            value={it.durabilityValue}
+                            min={0}
+                            max={durMax}
+                            rangeHint={`0–${durMax}`}
+                            onChange={(durabilityValue) =>
+                              setSendTemplateModal((m) =>
+                                m
+                                  ? {
+                                      ...m,
+                                      draftItems: m.draftItems.map((row, i) =>
+                                        i === idx ? { ...row, durabilityValue } : row,
+                                      ),
+                                    }
+                                  : m,
+                              )
+                            }
+                          />
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="send-template-qty-btns">
                         <button
@@ -4591,7 +5412,8 @@ export default function App() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -4683,9 +5505,16 @@ export default function App() {
                 renderSection={(id) => {
                   if (id === "typeRemark") {
                     const typeRemarkSectionDisabled =
-                      itemFilterColIdx.tr < 0 && itemFilterColIdx.remark < 0 && itemFilterColIdx.season < 0;
-                    const typeRemarkOnlyEmote =
-                      itemFilterColIdx.tr < 0 && itemFilterColIdx.remark >= 0;
+                      itemFilterColIdx.tr < 0 &&
+                      itemFilterColIdx.remark < 0 &&
+                      itemFilterColIdx.season < 0 &&
+                      itemFilterColIdx.type < 0 &&
+                      itemFilterColIdx.sub < 0;
+                    const typeRemarkOnlyPresets =
+                      itemFilterColIdx.tr < 0 &&
+                      (itemFilterColIdx.remark >= 0 ||
+                        itemFilterColIdx.type >= 0 ||
+                        itemFilterColIdx.sub >= 0);
                     return (
                       <div className={`item-filter-section item-filter-section--grow${typeRemarkSectionDisabled ? " item-filter-section--disabled" : ""}`}>
                         <div className="item-filter-h3-row">
@@ -4701,20 +5530,27 @@ export default function App() {
                           ) : null}
                         </div>
                         {typeRemarkSectionDisabled ? (
-                          <p className="help muted">当前表无「类型备注」「备注」与「赛季物品」列，该条件不可用。</p>
+                          <p className="help muted">当前表无「类型备注」「备注」「赛季物品」或「物品类型/子类型」列，该条件不可用。</p>
                         ) : (
                           <>
-                            {typeRemarkOnlyEmote ? (
+                            {typeRemarkOnlyPresets ? (
                               <p className="help muted" style={{ marginBottom: "0.35rem" }}>
-                                当前表无「类型备注」列，仅可使用预设 Emote（按「备注」列筛选）。
+                                当前表无「类型备注」列，仅可使用预设筛选项（Emote / 试衣间皮肤）。
                               </p>
                             ) : null}
-                            {itemFilterColIdx.tr >= 0 || itemFilterColIdx.remark >= 0 ? (
+                            {itemFilterColIdx.tr >= 0 ||
+                            itemFilterColIdx.remark >= 0 ||
+                            itemFilterColIdx.type >= 0 ||
+                            itemFilterColIdx.sub >= 0 ? (
                               <p className="help muted" style={{ marginBottom: "0.35rem" }}>
-                                预设「Emote」按「备注」列匹配：保留「动作名+Emote」（如秀肌肉Emote、贵族礼仪Emote）；排除含「大红检视」的 Emote（如大红检视Emote…）。其它选项仍按「类型备注」列。
+                                预设「Emote」按「备注」列匹配：保留「动作名+Emote」；排除含「大红检视」的 Emote。预设「试衣间皮肤」按「物品类型/子类型」匹配：Type
+                                100/200 或 SubType 2000000。其它选项仍按「类型备注」列。
                               </p>
                             ) : null}
-                            {itemFilterColIdx.tr >= 0 || itemFilterColIdx.remark >= 0 ? (
+                            {itemFilterColIdx.tr >= 0 ||
+                            itemFilterColIdx.remark >= 0 ||
+                            itemFilterColIdx.type >= 0 ||
+                            itemFilterColIdx.sub >= 0 ? (
                               <div ref={itemFilterTypeRemarkScrollRef} className="item-filter-section-grid-wrap">
                                 <FilterOptionGrid
                                   items={itemTypeRemarkDisplayKeys}
@@ -5152,7 +5988,16 @@ export default function App() {
         </div>
       </header>
 
-      <div className="body">
+      <div
+        ref={bodyRef}
+        className={`body${sidebarGalleryOpen ? " body--sidebar-gallery" : ""}${sidebarGalleryOpen && sidebarGalleryMainOpen ? " body--sidebar-gallery-main" : ""}`}
+        style={
+          sidebarGalleryOpen && sidebarGalleryMainOpen
+            ? ({ "--sidebar-gallery-split-width": `${gallerySplitWidthPx}px` } as React.CSSProperties)
+            : undefined
+        }
+      >
+        {!sidebarGalleryOpen ? (
         <Sidebar
           config={config}
           activeView={activeView}
@@ -5196,10 +6041,104 @@ export default function App() {
           onAddExpPresetRichAndMaxLevel={() =>
             void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
           }
+          sproutAccent={sidebarSproutDefaultColor()}
+          addSproutBusy={addSproutBusy}
+          onAddSproutOneClick={() => void runAddSproutOneClick()}
+          resetMatchAccent={sidebarResetMatchDefaultColor()}
+          clearMatchBusy={clearMatchBusy}
+          onClearTimeoutMatch={() => void runClearTimeoutMatch()}
+          uploadConfigAccent={sidebarUploadConfigDefaultColor()}
+          onSelectUploadConfig={() => {
+            if (filterSheetOpen) return;
+            switchActiveView({ kind: "uploadConfig" });
+          }}
+          uploadConfigBusy={uploadConfigBusy}
+          onUploadConfigPick={() => void pickAndUploadConfigCsvs()}
+          onUploadConfigRestore={() => void restoreWorkspaceConfigCsvs()}
           onCloseMenus={() => closeCtx()}
+          onOpenGallery={() => {
+            setSidebarGalleryOpen(true);
+            setSidebarGalleryMainOpen(false);
+          }}
           templateDropHoverId={templateDropHoverId}
           templateDropRejectId={templateDropRejectId}
         />
+        ) : null}
+        {sidebarGalleryOpen && config ? (
+          <SidebarFullscreenGallery
+            config={config}
+            activeView={activeView}
+            filterSheetOpen={filterSheetOpen}
+            onPersist={persist}
+            onClose={() => {
+              setSidebarGalleryOpen(false);
+              setSidebarGalleryMainOpen(false);
+            }}
+            onCardMainPanelClick={() => setSidebarGalleryMainOpen(true)}
+            onSelectItem={() => switchActiveView({ kind: "item" })}
+            onSelectTask={() => switchActiveView({ kind: "task" })}
+            onSelectTemplate={(id) => switchActiveView({ kind: "template", id })}
+            onOpenHiddenPanel={(panel) => {
+              setColumnHeaderMenu(null);
+              setHiddenPanel(panel);
+            }}
+            onTemplateRename={(id, title) => {
+              setTemplateRenameModal({ id, draft: title });
+            }}
+            onTemplateDelete={(id, title) => {
+              setPendingDeleteTemplate({ id, title });
+            }}
+            onSendTemplateNow={(title, items) => void sendTemplateItemsNow(title, items)}
+            onBatchSend={(templateId, title, items) =>
+              setSendTemplateModal({
+                templateId,
+                title,
+                draftItems: items.map((it) => ({ ...it })),
+              })
+            }
+            onSendTemplateSelected={(templateId) => void sendTemplateSelectedRows(templateId)}
+            onGlobalSendTemplate={(title, items) => openGlobalSendDialog(items, `模板「${title}」`)}
+            onCompleteTaskFromTemplate={completeTaskFromTemplate}
+            onAcceptTasksFromTemplate={acceptTasksFromTemplate}
+            onCompleteNextTaskFromPinned={completeNextTaskFromPinned}
+            serverWideSendEnabled={itemServerWideUi.entriesEnabled}
+            addExpAccent={sidebarAddExpDefaultColor(config)}
+            onSelectAddExp={() => {
+              if (filterSheetOpen) return;
+              switchActiveView({ kind: "addExp" });
+            }}
+            addExpPresetBusy={addExpPresetBusy}
+            onAddExpPresetMaxLevel={() => void runSidebarAddExpPreset(runAddExpPresetMaxLevel)}
+            onAddExpPresetRich={() => void runSidebarAddExpPreset(runAddExpPresetRich)}
+            onAddExpPresetRichAndMaxLevel={() =>
+              void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
+            }
+            sproutAccent={sidebarSproutDefaultColor()}
+            addSproutBusy={addSproutBusy}
+            onAddSproutOneClick={() => void runAddSproutOneClick()}
+            resetMatchAccent={sidebarResetMatchDefaultColor()}
+            clearMatchBusy={clearMatchBusy}
+            onClearTimeoutMatch={() => void runClearTimeoutMatch()}
+            uploadConfigAccent={sidebarUploadConfigDefaultColor()}
+            onSelectUploadConfig={() => {
+              if (filterSheetOpen) return;
+              switchActiveView({ kind: "uploadConfig" });
+            }}
+            uploadConfigBusy={uploadConfigBusy}
+            onUploadConfigPick={() => void pickAndUploadConfigCsvs()}
+            onUploadConfigRestore={() => void restoreWorkspaceConfigCsvs()}
+            templateDropHoverId={templateDropHoverId}
+            templateDropRejectId={templateDropRejectId}
+          />
+        ) : null}
+        {sidebarGalleryOpen && sidebarGalleryMainOpen ? (
+          <PanelSplitDivider
+            widthPx={gallerySplitWidthPx}
+            onWidthChange={setGallerySplitWidthPx}
+            getContainerWidth={() => bodyRef.current?.clientWidth ?? window.innerWidth}
+            onResizeEnd={scheduleGallerySplitPersist}
+          />
+        ) : null}
         <div className="main-column">
           {isItemTableView && config ? (
             <ItemFilterChipBar
@@ -5255,6 +6194,7 @@ export default function App() {
                 }))
               }
               showEmotePin={itemFilterColIdx.remark >= 0}
+              showFittingRoomSkinPin={itemFilterColIdx.type >= 0 || itemFilterColIdx.sub >= 0}
               showTypeRemarkPins={itemFilterColIdx.tr >= 0}
               showQualityRow={itemFilterColIdx.qual >= 0}
               showSeasonRow={itemFilterColIdx.season >= 0}
@@ -5359,6 +6299,18 @@ export default function App() {
               ensureGmtLoggedIn={ensureGmtLoggedIn}
               logGmt={logGmt}
             />
+          ) : activeView.kind === "uploadConfig" && config ? (
+            <UploadConfigPanel
+              config={config}
+              gtopLoggedIn={gtopLoggedIn}
+              busy={uploadConfigBusy}
+              progressText={uploadConfigProgress}
+              modifiedFilenames={modifiedConfigCsvFilenames}
+              restoringFilename={restoringConfigFilename}
+              onPickAndUpload={() => void pickAndUploadConfigCsvs()}
+              onRestoreSingle={(csvFilename) => void restoreSingleModifiedConfigCsv(csvFilename)}
+              onOpenSettings={() => setSettingsOpen(true)}
+            />
           ) : !currentAoa ? (
             <div className="empty">
               {wizardOpen
@@ -5426,6 +6378,21 @@ export default function App() {
                           ? "取消置顶"
                           : "置顶已勾选"}
                     </button>
+                    {isItemTableView ? (
+                      <span
+                        className="table-selection-meta-wear"
+                        title="未单独设置的武器/防具将使用此装备耐久发放（钥匙/绷带/甲修不使用）"
+                      >
+                        <span className="table-selection-meta-wear-label">装备耐久</span>
+                        <ItemValueSlider
+                          value={defaultWearValue}
+                          min={0}
+                          max={100}
+                          rangeHint="0–100"
+                          onChange={setDefaultWearValueFromSlider}
+                        />
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -5443,7 +6410,7 @@ export default function App() {
                 >
               <table
                 ref={tableDataRef}
-                className={`data${isItemTableView ? " data-item-qty" : ""}${freezeVisIdx >= 0 ? " data-col-freeze" : ""}`}
+                className={`data${isItemTableView ? " data-item-qty data-item-wear" : ""}${freezeVisIdx >= 0 ? " data-col-freeze" : ""}`}
               >
                 <thead>
                   <tr>
@@ -5489,6 +6456,7 @@ export default function App() {
                       const leftPx = inFreeze ? stickyCellLeftPx[cellIdx]! : undefined;
                       const edge = inFreeze && visIdx === freezeVisIdx;
                       const freezeCn = inFreeze ? `col-freeze${edge ? " col-freeze-edge" : ""}` : undefined;
+                      const columnFiltered = isColumnValueFilterActiveForColumn(activeColumnValueFilters, name, ci);
                       const sortBtns = (
                         <span className="th-sort-btns">
                           <button
@@ -5520,29 +6488,33 @@ export default function App() {
                       return (
                         <th
                           key={ci}
-                          className={freezeCn}
+                          className={`${freezeCn ?? ""}${columnFiltered ? " th--column-filtered" : ""}`.trim() || undefined}
                           style={leftPx !== undefined ? { left: leftPx } : undefined}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
                             setCtxMenu(null);
-                                                        setColumnHeaderMenu({ x: e.clientX, y: e.clientY, headerName: name });
+                            setColumnFilterPopover(null);
+                            setColumnHeaderMenu({ x: e.clientX, y: e.clientY, headerName: name, colIndex: ci });
                           }}
                         >
                           {activeView.kind === "template" || activeView.kind === "snapshot" ? (
                             <div className="th-inner">
                               <span>{name || `列${ci + 1}`}</span>
+                              {columnFiltered ? <span className="th-filter-mark" title="已启用列筛选" aria-hidden>▾</span> : null}
                               {sortBtns}
                             </div>
                           ) : (activeView.kind === "item" || activeView.kind === "task") &&
                             headerCannotHide(activeView.kind, name) ? (
                             <div className="th-inner">
                               <span>{name || `列${ci + 1}`}</span>
+                              {columnFiltered ? <span className="th-filter-mark" title="已启用列筛选" aria-hidden>▾</span> : null}
                               {sortBtns}
                             </div>
                           ) : (
                             <div className="th-inner">
                               <span>{name || `列${ci + 1}`}</span>
+                              {columnFiltered ? <span className="th-filter-mark" title="已启用列筛选" aria-hidden>▾</span> : null}
                               {sortBtns}
                               <span className="muted">隐藏</span>
                               <input
@@ -5565,11 +6537,21 @@ export default function App() {
                   isItemTableView={isItemTableView}
                   selectedRows={selectedRows}
                   itemLineQty={itemLineQty}
+                  defaultWearValue={defaultWearValue}
+                  itemLineWear={itemLineWear}
+                  wearRowOverride={wearRowOverride}
+                  itemLineDurability={itemLineDurability}
+                  durabilityRowOverride={durabilityRowOverride}
+                  rowSupportsWear={rowSupportsWearForTable}
+                  rowSupportsDurability={rowSupportsDurabilityForTable}
+                  rowDurabilityMax={rowDurabilityMaxForTable}
                   freezeVisIdx={freezeVisIdx}
                   stickyCellLeftPx={stickyCellLeftPx}
                   onToggleRow={toggleRow}
                   onBumpItemLineQty={bumpItemLineQty}
                   onSetItemLineQty={setItemLineQtyDirect}
+                  onSetItemLineWearValue={setItemLineWearValue}
+                  onSetItemLineDurabilityValue={setItemLineDurabilityValue}
                   showItemTypeInTable={Boolean(config?.showItemTypeInTable)}
                   itemIdColIndex={itemIdColIndex}
                   itemTypeColIndex={itemTypeColIndex}
@@ -5652,6 +6634,23 @@ export default function App() {
               <div role="separator" className="context-menu-sep" />
             </>
           ) : null}
+          {(activeView.kind === "template" || activeView.kind === "snapshot") &&
+          (() => {
+            const deleteCount = resolveTemplateRowsToDelete(ctxMenu.dataIdx, selectedRows).size;
+            if (deleteCount === 0) return null;
+            return (
+              <>
+                <button
+                  type="button"
+                  className="context-menu-item"
+                  onClick={() => void removeRowsFromCurrentTemplate()}
+                >
+                  从模板中删除{deleteCount > 1 ? `（${deleteCount} 行）` : ""}
+                </button>
+                <div role="separator" className="context-menu-sep" />
+              </>
+            );
+          })()}
           <button type="button" className="context-menu-item" onClick={() => openTemplateNameModal()}>
             保存为模板
           </button>
@@ -5715,6 +6714,18 @@ export default function App() {
         </div>
       ) : null}
 
+      {columnFilterPopover && columnFilterPopoverData ? (
+        <ColumnFilterPopover
+          anchor={{ x: columnFilterPopover.x, y: columnFilterPopover.y }}
+          columnHeader={columnFilterPopover.headerName}
+          uniqueValues={columnFilterPopoverData.uniqueValues}
+          initialSelectedKeys={columnFilterPopoverData.initialSelectedKeys}
+          onApply={applyColumnValueFilter}
+          onClearColumn={clearColumnValueFilterForPopover}
+          onClose={() => setColumnFilterPopover(null)}
+        />
+      ) : null}
+
       {columnHeaderMenu ? (
         <div
           ref={columnHeaderMenuRef}
@@ -5725,6 +6736,23 @@ export default function App() {
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {canColumnFilter ? (
+            <button
+              type="button"
+              className="context-menu-item"
+              onClick={() => {
+                setColumnFilterPopover({
+                  colIndex: columnHeaderMenu.colIndex,
+                  headerName: columnHeaderMenu.headerName,
+                  x: columnHeaderMenu.x,
+                  y: columnHeaderMenu.y,
+                });
+                setColumnHeaderMenu(null);
+              }}
+            >
+              筛选此列…
+            </button>
+          ) : null}
           <button type="button" className="context-menu-item" onClick={() => void applyFreezeThrough(columnHeaderMenu.headerName)}>
             冻结此列
           </button>

@@ -34,7 +34,11 @@ export function SidebarCardColorPopover({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("contextmenu", onDoc);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("contextmenu", onDoc);
+    };
   }, [onClose]);
 
   const apply = (hex: string) => {

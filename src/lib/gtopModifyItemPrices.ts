@@ -35,11 +35,11 @@ function failOp(message: string, toast = message): GtopItemPriceOpResult {
 
 function validateGtopSession(config: AppConfig, gtopLoggedIn: boolean): GtopSessionCheck {
   if (!gtopLoggedIn || !config.gtopCookie.trim()) {
-    return { ok: false, message: "请先在设置 → GTOP 接取任务中完成 GTOP 登录" };
+    return { ok: false, message: "请先在设置 → GTOP 中完成 GTOP 登录" };
   }
   const envId = config.gtopEnvId?.trim() ?? "";
   const regionServerId = config.gtopRegionServerId?.trim() ?? "";
-  if (!envId) return { ok: false, message: "请先在 GTOP 设置中选择默认环境" };
+  if (!envId) return { ok: false, message: "默认环境未关联，请刷新 GTOP 环境列表" };
   if (!regionServerId) return { ok: false, message: "请先在 GTOP 设置中选择分支环境" };
   return {
     ok: true,

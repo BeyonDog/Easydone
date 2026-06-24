@@ -1,0 +1,30 @@
+---
+description: easydone TypeScript/React 编码约定
+globs: src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# TypeScript / React
+
+## 文件组织
+
+- 纯函数、业务逻辑 → `src/lib/`
+- 可复用 hooks → `src/hooks/`
+- UI 组件 → `PascalCase.tsx`（如 `DataTableBody.tsx`、`ItemValueSlider.tsx`）
+
+## 与现有代码保持一致
+
+- 部分 import 带 `.ts` 后缀（如 `./lib/paths.ts`），新增文件跟随邻近模块风格
+- 表格/Excel：`cellStr`、`SheetMatrix`、`parseCellAsInteger` 来自 `src/lib/xlsxHelpers.ts`
+- 表格行索引 **`dataIdx`**：0-based，对应 `currentAoa[dataIdx + 1]`
+
+## 测试
+
+- 新增 `src/lib/` 行为时，同级添加 `*.test.ts`
+- 使用 `node:test` + `node:assert/strict`
+- 改 GMT 契约时必跑 `gmtApi.contract.test.ts`
+
+## 风格
+
+- 小步改动，避免过度抽象
+- 注释只写非显而易见的业务/协议细节

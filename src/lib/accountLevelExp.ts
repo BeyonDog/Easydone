@@ -198,11 +198,12 @@ export function formatExpAmountForApi(n: number): string {
 export const ADD_EXP_LEVEL_PROBE = 10;
 
 export type SecondBatchAfterProbeResult =
-  | { ok: true; secondExp: number; cumulativeTarget: number }
+  | { ok: true; secondExp: number; cumulativeTarget: number; tableMismatchWarning?: string }
   | { ok: false; error: string };
 
 /**
- * 假定 AdminAddExp 返回的 `exp_after` 与 AccountLevel 表中累计经验列（如 TotalExp）同为角色累计总经验。
+ * 按服返回的 `exp_after` 作为角色累计总经验，与表中目标等级的累计列做差。
+ * 表仅用于查目标等级累计值；若 exp_after 低于表中当前等级 floor，仍继续计算并附带警告。
  */
 export function secondBatchExpAfterProbe(
   byLevel: AccountLevelCumulativeMap,
@@ -217,16 +218,24 @@ export function secondBatchExpAfterProbe(
   if (cumulativeTarget == null) {
     return { ok: false, error: `表中缺少等级 ${targetLevel} 的累计经验行` };
   }
-  const floorAtLevel = byLevel.get(levelAfter);
-  if (floorAtLevel != null && expAfter < floorAtLevel) {
-    return {
-      ok: false,
-      error: `探针返回 exp_after=${expAfter} 小于表中 Lv.${levelAfter} 累计 ${floorAtLevel}，无法按全量累计口径计算差额`,
-    };
-  }
   const secondExp = cumulativeTarget - expAfter;
   if (!Number.isFinite(secondExp)) {
     return { ok: false, error: "第二次经验计算结果无效" };
   }
-  return { ok: true, secondExp, cumulativeTarget };
+
+  const floorAtLevel = byLevel.get(levelAfter);
+  let tableMismatchWarning: string | undefined;
+  if (floorAtLevel != null && expAfter < floorAtLevel) {
+    tableMismatchWarning =
+      `AccountLevel 表与当前服可能不一致：角色 Lv.${levelAfter}，exp_after=${expAfter}，` +
+      `但表中 Lv.${levelAfter} 累计为 ${floorAtLevel}。已按 exp_after 作为累计经验继续计算第二次加成；` +
+      `若结果不准请核对工作区 Account.xlsx。`;
+  }
+
+  return {
+    ok: true,
+    secondExp,
+    cumulativeTarget,
+    ...(tableMismatchWarning ? { tableMismatchWarning } : {}),
+  };
 }

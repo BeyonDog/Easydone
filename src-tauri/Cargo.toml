@@ -1,6 +1,6 @@
 [package]
 name = "easydone"
-version = "1.1.2"
+version = "1.1.8"
 description = "easydone local Excel + GMT helper"
 authors = ["easydone"]
 edition = "2021"

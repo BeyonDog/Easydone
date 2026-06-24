@@ -29,6 +29,10 @@ struct SendTemplateItem {
     qty: i64,
     #[serde(default)]
     label: Option<String>,
+    #[serde(default)]
+    wear_value: Option<i32>,
+    #[serde(default)]
+    durability_value: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -96,6 +100,8 @@ struct ItemTableFilter {
     chip_bar_type_remark_order: Option<Vec<String>>,
     #[serde(default)]
     chip_bar_quality_order: Option<Vec<String>>,
+    #[serde(default)]
+    column_value_filters: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -111,6 +117,8 @@ struct TaskTableFilter {
     chain_key_order: Option<Vec<String>>,
     #[serde(default)]
     section_order: Option<Vec<String>>,
+    #[serde(default)]
+    column_value_filters: Option<std::collections::HashMap<String, Vec<String>>>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -211,6 +219,12 @@ struct AppConfig {
     sidebar_task_card_color_override: Option<String>,
     #[serde(default)]
     sidebar_template_order: Option<Vec<String>>,
+    #[serde(default)]
+    sidebar_card_order: Option<Vec<String>>,
+    #[serde(default)]
+    sidebar_card_hidden: Option<Vec<String>>,
+    #[serde(default)]
+    sidebar_gallery_split_px: Option<f64>,
     #[serde(default = "default_theme_accent_hex")]
     theme_accent_hex: String,
     #[serde(default = "default_theme_background_hex")]
@@ -320,6 +334,9 @@ impl Default for AppConfig {
             sidebar_item_card_color_override: None,
             sidebar_task_card_color_override: None,
             sidebar_template_order: None,
+            sidebar_card_order: None,
+            sidebar_card_hidden: None,
+            sidebar_gallery_split_px: None,
             theme_accent_hex: default_theme_accent_hex(),
             theme_background_hex: default_theme_background_hex(),
             theme_wallpaper_relative_path: None,
@@ -620,6 +637,9 @@ fn main() {
             gtop::gtop_fetch_item_csv_file_path,
             gtop::gtop_upload_task_csv,
             gtop::gtop_upload_item_csv,
+            gtop::gtop_fetch_config_csv_file_path,
+            gtop::gtop_upload_config_csv,
+            gtop::list_config_csv_files,
             gtop::gtop_make_temp_task_csv,
             gtop::gtop_make_temp_item_csv,
             gtop::read_text_file,

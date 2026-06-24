@@ -155,11 +155,17 @@ export async function submitLevelTarget(
       return false;
     }
 
+    const tableWarn = batch.tableMismatchWarning;
+    const appendTableWarn = (extra: string | undefined): string | undefined => {
+      if (!tableWarn) return extra;
+      return extra ? `${tableWarn}\n${extra}` : tableWarn;
+    };
+
     if (batch.secondExp <= 0) {
       deps.onAddExpResult?.(p1);
       logAddExp(deps, "success", "探针后累计经验已达或超过目标等级要求，已完成同步（+10）。", {
         items: [levelItem],
-        extra: formatAddExpResultExtra(p1),
+        extra: appendTableWarn(formatAddExpResultExtra(p1)),
       });
       return true;
     }
@@ -170,9 +176,9 @@ export async function submitLevelTarget(
       : formatExecMessage(deps.config, r2.message || "第二次加经验失败");
     logAddExp(deps, r2.ok ? "success" : "failure", msg, {
       items: [{ itemId: `exp +${batch.secondExp}`, qty: 1 }, levelItem],
-      extra: r2.addExpResult
-        ? formatAddExpResultExtra(r2.addExpResult)
-        : formatAddExpResultExtra(p1),
+      extra: appendTableWarn(
+        r2.addExpResult ? formatAddExpResultExtra(r2.addExpResult) : formatAddExpResultExtra(p1),
+      ),
     });
     if (r2.ok && r2.addExpResult) {
       deps.onAddExpResult?.(r2.addExpResult);

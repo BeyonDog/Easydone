@@ -374,7 +374,8 @@ export function AddExpPanel({
               <p className="help muted add-exp-exp-preview">
                 点击提交后将以「目标级累计 − 探针返回的{" "}
                 <code className="add-exp-inline-code">exp_after</code>
-                」计算第二次加成；提交过程中无中途提示。
+                」计算第二次加成；提交过程中无中途提示。若 AccountLevel 表与区服不一致，操作日志中会出现表不一致警告，仍会继续按{" "}
+                <code className="add-exp-inline-code">exp_after</code> 计算。
               </p>
               {levelTargetCheck && !levelTargetCheck.ok ? (
                 <p className="help add-exp-parse-warn">{levelTargetCheck.error}</p>

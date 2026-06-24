@@ -1,3 +1,49 @@
+export type PinnedRowOrderState = { item: number[]; task: number[] };
+
+/** Move toAdd to the front of pinned order (selectionOrder first), keep rest deduped. */
+export function pinSelectionToFront(
+  existing: number[],
+  toAdd: number[],
+  selectionOrder: number[],
+): number[] {
+  if (toAdd.length === 0) return existing;
+  const toAddSet = new Set(toAdd);
+  const front: number[] = [];
+  const seen = new Set<number>();
+
+  for (const di of selectionOrder) {
+    if (toAddSet.has(di) && !seen.has(di)) {
+      front.push(di);
+      seen.add(di);
+    }
+  }
+  for (const di of toAdd) {
+    if (!seen.has(di)) {
+      front.push(di);
+      seen.add(di);
+    }
+  }
+  for (const di of existing) {
+    if (!seen.has(di)) {
+      front.push(di);
+      seen.add(di);
+    }
+  }
+  return front;
+}
+
+/** Pin visible selected rows to front for one table. */
+export function pinVisibleSelectionToFront(
+  pinned: PinnedRowOrderState,
+  table: "item" | "task",
+  visibleSelectedIdxs: number[],
+  selectionOrder: number[],
+): PinnedRowOrderState {
+  if (visibleSelectedIdxs.length === 0) return pinned;
+  const key = table === "item" ? "item" : "task";
+  return { ...pinned, [key]: pinSelectionToFront(pinned[key], visibleSelectedIdxs, selectionOrder) };
+}
+
 /** Merge newly pinned dataIdxs into existing order; selectionOrder determines append order among toAdd. */
 export function mergePinnedOrder(
   existing: number[],

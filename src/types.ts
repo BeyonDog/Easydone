@@ -30,6 +30,8 @@ export interface ItemTableFilter {
   customKeywordKeys: string[];
   /** 顶栏 Chip：自定义关键字钉在主条的顺序 */
   chipBarCustomKeywordOrder?: string[] | null;
+  /** 列筛选：稳定列键 → 选中展示值（同列或、多列且） */
+  columnValueFilters?: Record<string, string[]>;
 }
 
 /** 任务主表与任务快照共用 */
@@ -50,6 +52,8 @@ export interface TaskTableFilter {
   /** 当前选中的自定义关键字（同列多选为且） */
   customKeywordKeys: string[];
   chipBarCustomKeywordOrder?: string[] | null;
+  /** 列筛选：稳定列键 → 选中展示值（同列或、多列且） */
+  columnValueFilters?: Record<string, string[]>;
 }
 
 /** @deprecated 读盘迁移用；新数据在 savedTemplates */
@@ -67,6 +71,10 @@ export interface SendTemplateItem {
   qty: number;
   /** 保存时从表内备注解析，仅展示用 */
   label?: string;
+  /** 武器/防具耐久 0–100，写入 GMT init_wear_value */
+  wearValue?: number;
+  /** 钥匙/绷带/甲修等，写入 GMT additional_info.durability */
+  durabilityValue?: number;
 }
 
 /** @deprecated 读盘迁移用 */
@@ -116,6 +124,15 @@ export interface GlobalSendLastForm {
   endTime: number;
 }
 
+/** 上传配置：已手动上传至 GTOP 的配置 CSV 记录（按工作区 + 环境 + 区服隔离） */
+export type GtopModifiedConfigCsvState = {
+  workspaceRoot: string;
+  envId: string;
+  regionServerId: string;
+  /** 已上传至 GTOP 的配置文件名（basename，去重） */
+  filenames: string[];
+};
+
 export interface AppConfig {
   excelWorkspaceRoot: string;
   gmAssistantLocalPath: string;
@@ -142,8 +159,14 @@ export interface AppConfig {
   sidebarItemCardColorOverride?: string | null;
   /** 全部任务卡片单独覆盖色 */
   sidebarTaskCardColorOverride?: string | null;
-  /** 模板卡片 id 顺序 */
+  /** 模板卡片 id 顺序；与 sidebarCardOrder 中 template 子序列同步 */
   sidebarTemplateOrder?: string[] | null;
+  /** 侧栏全部卡片（固定卡 + 模板）全局顺序 */
+  sidebarCardOrder?: string[] | null;
+  /** 在窄侧栏隐藏的卡片 id */
+  sidebarCardHidden?: string[] | null;
+  /** 全屏画廊分屏时左侧画廊宽度（px） */
+  sidebarGallerySplitPx?: number | null;
   themeAccentHex: string;
   themeBackgroundHex: string;
   themeWallpaperRelativePath: string | null;
@@ -165,6 +188,7 @@ export interface AppConfig {
   gtopEnvName: string | null;
   gtopRegionServerId: string | null;
   gtopRegionServerName: string | null;
+  gtopModifiedConfigCsv?: GtopModifiedConfigCsvState | null;
   itemServerWideSendSettings?: ItemServerWideSendSettings | null;
   globalSendLastForm?: GlobalSendLastForm | null;
   /** 后台静默同步 Excel 间隔（秒）；0 为关闭，默认 1800（30 分钟） */
@@ -177,6 +201,7 @@ export type ActiveView =
   | { kind: "item" }
   | { kind: "task" }
   | { kind: "addExp" }
+  | { kind: "uploadConfig" }
   | { kind: "template"; id: string }
   /** @deprecated 读盘后转为 template */
   | { kind: "snapshot"; id: string };

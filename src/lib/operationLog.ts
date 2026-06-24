@@ -6,13 +6,15 @@ export interface GmtLogItem {
   itemId: string;
   qty: number;
   label?: string;
+  wearValue?: number;
+  durabilityValue?: number;
 }
 
 export interface GmtOperationPayload {
   envName: string;
   accountId: string;
   items: GmtLogItem[];
-  source?: "item-table" | "template" | "task" | "add-exp" | "add-money" | "global-mail";
+  source?: "item-table" | "template" | "task" | "add-exp" | "add-money" | "global-mail" | "gmt-tool";
   templateTitle?: string;
 }
 
@@ -70,12 +72,16 @@ export function toGmtLogItems(items: SendTemplateItem[]): GmtLogItem[] {
     itemId: it.itemId,
     qty: it.qty,
     label: it.label,
+    ...(it.wearValue != null ? { wearValue: it.wearValue } : {}),
+    ...(it.durabilityValue != null ? { durabilityValue: it.durabilityValue } : {}),
   }));
 }
 
 export function formatGmtItemLine(item: GmtLogItem): string {
   const label = item.label?.trim() ? `（${item.label.trim()}）` : "";
-  return `${item.itemId} × ${item.qty}${label}`;
+  const wear = item.wearValue != null ? ` 装备耐久${item.wearValue}` : "";
+  const dur = item.durabilityValue != null ? ` 耐久${item.durabilityValue}` : "";
+  return `${item.itemId} × ${item.qty}${label}${wear}${dur}`;
 }
 
 export function buildGmtOperationLog(

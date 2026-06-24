@@ -112,6 +112,44 @@ export async function gtopMakeTempItemCsv(patchedUtf8: string): Promise<string> 
   return invoke("gtop_make_temp_item_csv", { patchedUtf8 });
 }
 
+export async function gtopFetchConfigCsvFilePath(
+  slice: GtopSessionSlice,
+  envId: string,
+  csvFilename: string,
+): Promise<string> {
+  return invoke("gtop_fetch_config_csv_file_path", {
+    baseUrl: slice.gtopBaseUrl.trim() || DEFAULT_GTOP_BASE_URL,
+    cookie: slice.gtopCookie,
+    project: slice.gtopProject.trim() || DEFAULT_GTOP_PROJECT,
+    envId,
+    csvFilename,
+  });
+}
+
+export async function gtopUploadConfigCsv(args: {
+  slice: GtopSessionSlice;
+  envId: string;
+  regionServerId: string;
+  filePath: string;
+  csvLocalPath: string;
+  csvFilename: string;
+}): Promise<GtopUploadResult> {
+  return invoke("gtop_upload_config_csv", {
+    baseUrl: args.slice.gtopBaseUrl.trim() || DEFAULT_GTOP_BASE_URL,
+    cookie: args.slice.gtopCookie,
+    project: args.slice.gtopProject.trim() || DEFAULT_GTOP_PROJECT,
+    envId: args.envId,
+    regionServerId: args.regionServerId,
+    filePath: args.filePath,
+    csvLocalPath: args.csvLocalPath,
+    csvFilename: args.csvFilename,
+  });
+}
+
+export async function listConfigCsvFiles(workspaceRoot: string): Promise<string[]> {
+  return invoke("list_config_csv_files", { workspaceRoot });
+}
+
 export async function gtopOpenLoginWindow(baseUrl: string): Promise<void> {
   await invoke("gtop_open_login_window", {
     baseUrl: baseUrl.trim() || DEFAULT_GTOP_BASE_URL,

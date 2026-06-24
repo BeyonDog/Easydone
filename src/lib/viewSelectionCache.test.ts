@@ -13,11 +13,23 @@ describe("viewSelectionKey", () => {
 });
 
 describe("snapshotFromSelection / applySnapshot", () => {
-  it("round-trips selection state", () => {
-    const snap = snapshotFromSelection(new Set([1, 3]), [3, 1], { 1: 2, 3: 5 });
+  it("round-trips selection state including durability", () => {
+    const snap = snapshotFromSelection(
+      new Set([1, 3]),
+      [3, 1],
+      { 1: 2, 3: 5 },
+      { 1: 80 },
+      new Set([1]),
+      { 3: 12 },
+      new Set([3]),
+    );
     const restored = applySnapshot(snap);
     assert.deepEqual([...restored.selectedRows].sort(), [1, 3]);
     assert.deepEqual(restored.selectedRowOrder, [3, 1]);
     assert.deepEqual(restored.itemLineQty, { 1: 2, 3: 5 });
+    assert.deepEqual(restored.itemLineWear, { 1: 80 });
+    assert.deepEqual([...restored.wearRowOverride], [1]);
+    assert.deepEqual(restored.itemLineDurability, { 3: 12 });
+    assert.deepEqual([...restored.durabilityRowOverride], [3]);
   });
 });

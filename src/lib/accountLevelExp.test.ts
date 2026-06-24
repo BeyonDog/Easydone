@@ -79,9 +79,24 @@ describe("secondBatchExpAfterProbe", () => {
     assert.equal(r.secondExp, 50);
   });
 
-  it("rejects exp_after below table floor", () => {
+  it("warns but continues when exp_after below table floor", () => {
     const r = secondBatchExpAfterProbe(byLevel, 3, 2, 70);
-    assert.equal(r.ok, false);
+    assert.equal(r.ok, true);
+    if (!r.ok) return;
+    assert.equal(r.secondExp, 70);
+    assert.match(r.tableMismatchWarning ?? "", /AccountLevel 表与当前服可能不一致/);
+  });
+
+  it("computes secondExp for rct01-like probe mismatch", () => {
+    const rctLike = new Map([
+      [22, 4240],
+      [50, 120_000],
+    ]);
+    const r = secondBatchExpAfterProbe(rctLike, 50, 22, 3501);
+    assert.equal(r.ok, true);
+    if (!r.ok) return;
+    assert.equal(r.secondExp, 120_000 - 3501);
+    assert.match(r.tableMismatchWarning ?? "", /Lv\.22/);
   });
 });
 

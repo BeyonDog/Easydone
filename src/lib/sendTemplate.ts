@@ -8,6 +8,14 @@ import {
 } from "./itemServerWideSendSettings.ts";
 import { gmtExecAdminSendGlobalMail, gmtExecAdminSendMail, gmtSessionSliceFromConfig } from "./gmtClient";
 import {
+  itemDurabilityMaxForSendItem,
+  parseSendItemMergeKey,
+  resolveRowDurabilityValue,
+  resolveRowWearValue,
+  sendItemMergeKey,
+  type SendItemsWearOptions,
+} from "./itemWearValue.ts";
+import {
   cellStr,
   parseCellAsInteger,
   resolveItemIdColumnIndex,
@@ -15,17 +23,23 @@ import {
 } from "./xlsxHelpers";
 import type { AppConfig, SendTemplateItem } from "../types";
 
+export { parseSendItemMergeKey, sendItemMergeKey } from "./itemWearValue.ts";
+
 export function buildSendItemsFromSelection(
   aoa: SheetMatrix,
   selectedRows: Set<number>,
   itemLineQty: Record<number, number>,
   remarkColIndex: number,
+  wearOpts?: SendItemsWearOptions,
 ): SendTemplateItem[] {
   const headersRow = aoa[0]?.map((h) => cellStr(h)) ?? [];
   const idCol = resolveItemIdColumnIndex(headersRow);
   if (idCol < 0) return [];
 
-  const counts = new Map<string, { qty: number; label?: string }>();
+  const counts = new Map<
+    string,
+    { qty: number; label?: string; wearValue?: number; durabilityValue?: number }
+  >();
   const orderKeys: string[] = [];
 
   for (const di of selectedRows) {
@@ -43,37 +57,83 @@ export function buildSendItemsFromSelection(
       if (remark) label = remark;
     }
 
-    if (!counts.has(idKey)) orderKeys.push(idKey);
-    const prev = counts.get(idKey);
-    counts.set(idKey, {
+    let wearValue: number | undefined;
+    let durabilityValue: number | undefined;
+    if (wearOpts) {
+      wearValue = resolveRowWearValue(
+        di,
+        row,
+        wearOpts.typeCol,
+        wearOpts.typeRemarkCol,
+        wearOpts.itemLineWear,
+        wearOpts.wearRowOverride,
+        wearOpts.defaultWearValue,
+      );
+      durabilityValue = resolveRowDurabilityValue(
+        di,
+        row,
+        wearOpts.typeCol,
+        wearOpts.typeRemarkCol,
+        wearOpts.initDurCol,
+        wearOpts.itemLineDurability,
+        wearOpts.durabilityRowOverride,
+      );
+    }
+
+    const mergeKey = sendItemMergeKey(idKey, wearValue, durabilityValue);
+    if (!counts.has(mergeKey)) orderKeys.push(mergeKey);
+    const prev = counts.get(mergeKey);
+    counts.set(mergeKey, {
       qty: (prev?.qty ?? 0) + qty,
       label: prev?.label ?? label,
+      wearValue: prev?.wearValue ?? wearValue,
+      durabilityValue: prev?.durabilityValue ?? durabilityValue,
     });
   }
 
-  return orderKeys.map((itemId) => {
-    const v = counts.get(itemId)!;
-    return { itemId, qty: v.qty, label: v.label };
+  return orderKeys.map((mergeKey) => {
+    const v = counts.get(mergeKey)!;
+    const parsed = parseSendItemMergeKey(mergeKey);
+    return {
+      itemId: parsed.itemId,
+      qty: v.qty,
+      label: v.label,
+      ...(v.wearValue != null ? { wearValue: v.wearValue } : {}),
+      ...(v.durabilityValue != null ? { durabilityValue: v.durabilityValue } : {}),
+    };
   });
 }
 
 export function mergeSendTemplateItems(items: SendTemplateItem[]): SendTemplateItem[] {
-  const counts = new Map<string, { qty: number; label?: string }>();
+  const counts = new Map<
+    string,
+    { qty: number; label?: string; wearValue?: number; durabilityValue?: number }
+  >();
   const orderKeys: string[] = [];
   for (const it of items) {
     const id = it.itemId.trim();
     if (!id) continue;
     const qty = Math.min(9999, Math.max(1, it.qty));
-    if (!counts.has(id)) orderKeys.push(id);
-    const prev = counts.get(id);
-    counts.set(id, {
+    const mergeKey = sendItemMergeKey(id, it.wearValue, it.durabilityValue);
+    if (!counts.has(mergeKey)) orderKeys.push(mergeKey);
+    const prev = counts.get(mergeKey);
+    counts.set(mergeKey, {
       qty: (prev?.qty ?? 0) + qty,
       label: prev?.label ?? it.label,
+      wearValue: prev?.wearValue ?? it.wearValue,
+      durabilityValue: prev?.durabilityValue ?? it.durabilityValue,
     });
   }
-  return orderKeys.map((itemId) => {
-    const v = counts.get(itemId)!;
-    return { itemId, qty: v.qty, label: v.label };
+  return orderKeys.map((mergeKey) => {
+    const v = counts.get(mergeKey)!;
+    const parsed = parseSendItemMergeKey(mergeKey);
+    return {
+      itemId: parsed.itemId,
+      qty: v.qty,
+      label: v.label,
+      ...(v.wearValue != null ? { wearValue: v.wearValue } : {}),
+      ...(v.durabilityValue != null ? { durabilityValue: v.durabilityValue } : {}),
+    };
   });
 }
 
@@ -84,7 +144,10 @@ export type AdminSendMailResult = {
   rowCount?: number;
 };
 
-function validateRewardItemsForPanel(rewardItems: { id: string; cnt: string }[]): string | null {
+function validateRewardItemsForPanel(
+  rewardItems: { id: string; cnt: string; wearValue?: number; durabilityValue?: number }[],
+  itemAoa?: SheetMatrix | null,
+): string | null {
   if (rewardItems.length === 0) return "物品列表为空";
   for (const r of rewardItems) {
     const id = r.id.trim();
@@ -94,13 +157,32 @@ function validateRewardItemsForPanel(rewardItems: { id: string; cnt: string }[])
     const n = Number.parseInt(cntStr, 10);
     if (!Number.isFinite(n) || n <= 0) return `物品 ${id} 数量须为正整数`;
     if (n > ADD_MONEY_MAX_GOLD_QTY) return `物品 ${id} 数量超过上限 ${ADD_MONEY_MAX_GOLD_QTY}`;
+    if (r.wearValue != null && (r.wearValue < 0 || r.wearValue > 100)) {
+      return `物品 ${id} 耐久须在 0–100`;
+    }
+    if (r.durabilityValue != null) {
+      const max = itemDurabilityMaxForSendItem(itemAoa ?? null, id);
+      const cap = max ?? r.durabilityValue;
+      if (r.durabilityValue < 0 || r.durabilityValue > cap) {
+        return `物品 ${id} 耐久须在 0–${cap}`;
+      }
+    }
   }
   return null;
 }
 
+function toGmtRewardItems(items: SendTemplateItem[]) {
+  return items.map((it) => ({
+    id: it.itemId,
+    cnt: String(it.qty),
+    ...(it.wearValue != null ? { wearValue: it.wearValue } : {}),
+    ...(it.durabilityValue != null ? { durabilityValue: it.durabilityValue } : {}),
+  }));
+}
+
 /** 加经验加钱面板等：不经 mergeSendTemplateItems 的 9999 数量上限 */
 export async function execAdminSendMailRewardItems(
-  rewardItems: { id: string; cnt: string }[],
+  rewardItems: { id: string; cnt: string; wearValue?: number; durabilityValue?: number }[],
   config: AppConfig,
   accountId: string,
   envDisplayLabel?: string,
@@ -145,6 +227,7 @@ export async function execAdminSendMailItems(
   config: AppConfig,
   accountId: string,
   envDisplayLabel?: string,
+  itemAoa?: SheetMatrix | null,
 ): Promise<AdminSendMailResult> {
   const merged = mergeSendTemplateItems(items);
   if (merged.length === 0) {
@@ -156,10 +239,11 @@ export async function execAdminSendMailItems(
     return { ok: false, message: envBlock, itemKindCount: merged.length };
   }
 
-  const rewardItems = merged.map((it) => ({
-    id: it.itemId,
-    cnt: String(it.qty),
-  }));
+  const rewardItems = toGmtRewardItems(merged);
+  const validationError = validateRewardItemsForPanel(rewardItems, itemAoa);
+  if (validationError) {
+    return { ok: false, message: validationError, itemKindCount: merged.length };
+  }
 
   const formatError = (raw: string) =>
     formatGmtExecErrorMessage(raw, envDisplayLabel, config.gmtEnvId);
@@ -197,15 +281,17 @@ export async function execAdminSendGlobalMail(
     startTime: number;
     endTime: number;
   },
+  itemAoa?: SheetMatrix | null,
 ): Promise<AdminSendMailResult> {
   const merged = mergeSendTemplateItems(items);
   if (merged.length === 0) {
     return { ok: false, message: "物品列表为空", itemKindCount: 0 };
   }
-  const rewardItems = merged.map((it) => ({
-    id: it.itemId,
-    cnt: String(it.qty),
-  }));
+  const rewardItems = toGmtRewardItems(merged);
+  const validationError = validateRewardItemsForPanel(rewardItems, itemAoa);
+  if (validationError) {
+    return { ok: false, message: validationError, itemKindCount: rewardItems.length };
+  }
 
   const envName = config.gmtEnvName?.trim();
   if (!envName) {

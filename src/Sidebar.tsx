@@ -1,17 +1,18 @@
-import { useCallback, useRef, useState, type ReactNode } from "react";
-import type { ActiveView, AppConfig, SavedTemplate, SendTemplateItem } from "./types.ts";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ActiveView, AppConfig, SendTemplateItem } from "./types.ts";
 import { SidebarCardColorPopover } from "./SidebarCardColorPopover.tsx";
 import {
-  mergeSidebarTemplateOrder,
-  resolvePinnedItemCardColor,
-  resolvePinnedTaskCardColor,
-  resolveTemplateCardColor,
-  sidebarCardAccentStyleObj,
   sidebarItemDefaultColor,
   sidebarTaskDefaultColor,
 } from "./lib/sidebarCardColor.ts";
-import { formatSidebarCardCreatedAt } from "./lib/formatSidebarCardCreatedAt.ts";
 import { usePointerDragScroll } from "./hooks/usePointerDragScroll.ts";
+import { SidebarCardDnD } from "./SidebarCardDnD.tsx";
+import { SidebarCardRenderer } from "./SidebarCardRenderer.tsx";
+import {
+  buildSidebarCardDescriptors,
+  filterVisibleSidebarCards,
+} from "./lib/sidebarCardRegistry.ts";
+import { reorderSidebarCardSubset } from "./lib/sidebarCardLayout.ts";
 
 export type SidebarProps = {
   config: AppConfig;
@@ -38,7 +39,19 @@ export type SidebarProps = {
   onAddExpPresetMaxLevel?: () => void;
   onAddExpPresetRich?: () => void;
   onAddExpPresetRichAndMaxLevel?: () => void;
+  onSelectUploadConfig: () => void;
+  sproutAccent: string;
+  addSproutBusy?: boolean;
+  onAddSproutOneClick?: () => void;
+  resetMatchAccent: string;
+  clearMatchBusy?: boolean;
+  onClearTimeoutMatch?: () => void;
+  uploadConfigAccent: string;
+  uploadConfigBusy?: boolean;
+  onUploadConfigPick?: () => void;
+  onUploadConfigRestore?: () => void;
   onCloseMenus: () => void;
+  onOpenGallery: () => void;
   templateDropHoverId?: string | null;
   templateDropRejectId?: string | null;
 };
@@ -51,124 +64,6 @@ type ColorTarget =
 type SidebarMenu =
   | { type: "pinned"; x: number; y: number; pin: PinnedMenuTarget }
   | { type: "template"; x: number; y: number; id: string; title: string };
-
-function TemplateDnDList({
-  templates,
-  onReorder,
-  renderCard,
-}: {
-  templates: SavedTemplate[];
-  onReorder: (ordered: SavedTemplate[]) => void;
-  renderCard: (t: SavedTemplate, dragHandle: ReactNode) => ReactNode;
-}) {
-  const listRef = useRef<HTMLDivElement>(null);
-  const fromRef = useRef<number | null>(null);
-  const itemsAtDragRef = useRef<SavedTemplate[]>([]);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const [dropIdx, setDropIdx] = useState<number | null>(null);
-
-  const endDrag = useCallback(() => {
-    fromRef.current = null;
-    itemsAtDragRef.current = [];
-    setDragFrom(null);
-    setDropIdx(null);
-  }, []);
-
-  const onHandlePointerDown = useCallback(
-    (index: number) => (e: React.PointerEvent<HTMLSpanElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      fromRef.current = index;
-      itemsAtDragRef.current = [...templates];
-      setDragFrom(index);
-      setDropIdx(index);
-
-      const onMove = (ev: PointerEvent) => {
-        if (fromRef.current === null) return;
-        const root = listRef.current;
-        if (!root) return;
-        const rows = root.querySelectorAll<HTMLElement>("[data-sidebar-dnd-item]");
-        const n = rows.length;
-        let insert = n;
-        for (let i = 0; i < n; i++) {
-          const r = rows[i].getBoundingClientRect();
-          const mid = r.top + r.height / 2;
-          if (ev.clientY < mid) {
-            insert = i;
-            break;
-          }
-        }
-        setDropIdx(insert);
-      };
-
-      const onUp = (ev: PointerEvent) => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-        const from = fromRef.current;
-        if (from === null) {
-          endDrag();
-          return;
-        }
-        let insert = itemsAtDragRef.current.length;
-        const root = listRef.current;
-        if (root) {
-          const rows = root.querySelectorAll<HTMLElement>("[data-sidebar-dnd-item]");
-          const n = rows.length;
-          insert = n;
-          for (let i = 0; i < n; i++) {
-            const r = rows[i].getBoundingClientRect();
-            const mid = r.top + r.height / 2;
-            if (ev.clientY < mid) {
-              insert = i;
-              break;
-            }
-          }
-        }
-        const src = itemsAtDragRef.current;
-        const next = [...src];
-        const [row] = next.splice(from, 1);
-        let to = insert;
-        if (to > from) to -= 1;
-        next.splice(to, 0, row);
-        onReorder(next);
-        endDrag();
-      };
-
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-    },
-    [templates, onReorder, endDrag],
-  );
-
-  return (
-    <div className="sidebar-template-dnd-list" ref={listRef}>
-      {templates.map((t, i) => {
-        const showBefore = dropIdx === i && dragFrom !== null && dragFrom !== i;
-        const handle = (
-          <span
-            className="sidebar-card-drag-handle"
-            aria-hidden
-            onPointerDown={onHandlePointerDown(i)}
-            title="拖动排序"
-          >
-            ⋮⋮
-          </span>
-        );
-        return (
-          <div key={t.id} className="sidebar-template-dnd-slot" data-sidebar-dnd-item>
-            {showBefore ? <div className="sidebar-template-drop-indicator" aria-hidden /> : null}
-            {renderCard(t, handle)}
-          </div>
-        );
-      })}
-      {dropIdx === templates.length && dragFrom !== null ? (
-        <div className="sidebar-template-drop-indicator sidebar-template-drop-indicator--end" aria-hidden />
-      ) : null}
-    </div>
-  );
-}
 
 export function Sidebar({
   config,
@@ -195,18 +90,44 @@ export function Sidebar({
   onAddExpPresetMaxLevel,
   onAddExpPresetRich,
   onAddExpPresetRichAndMaxLevel,
+  onSelectUploadConfig,
+  sproutAccent,
+  addSproutBusy = false,
+  onAddSproutOneClick,
+  resetMatchAccent,
+  clearMatchBusy = false,
+  onClearTimeoutMatch,
+  uploadConfigAccent,
+  uploadConfigBusy = false,
+  onUploadConfigPick,
+  onUploadConfigRestore,
   onCloseMenus,
+  onOpenGallery,
   templateDropHoverId = null,
   templateDropRejectId = null,
 }: SidebarProps) {
   const [menu, setMenu] = useState<SidebarMenu | null>(null);
   const [colorTarget, setColorTarget] = useState<ColorTarget | null>(null);
   const [colorAnchor, setColorAnchor] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const templates = mergeSidebarTemplateOrder(config.savedTemplates, config.sidebarTemplateOrder);
+  useEffect(() => {
+    if (!menu) return;
+    const onDismiss = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setMenu(null);
+    };
+    document.addEventListener("mousedown", onDismiss);
+    document.addEventListener("contextmenu", onDismiss);
+    return () => {
+      document.removeEventListener("mousedown", onDismiss);
+      document.removeEventListener("contextmenu", onDismiss);
+    };
+  }, [menu]);
+
+  const allCards = useMemo(() => buildSidebarCardDescriptors(config), [config]);
+  const visibleCards = useMemo(() => filterVisibleSidebarCards(allCards), [allCards]);
   const dragScroll = usePointerDragScroll({ enabled: !filterSheetOpen });
-  const itemAccent = resolvePinnedItemCardColor(config);
-  const taskAccent = resolvePinnedTaskCardColor(config);
 
   const openColorPopover = (target: ColorTarget, x: number, y: number) => {
     setMenu(null);
@@ -218,10 +139,26 @@ export function Sidebar({
   const colorInitialHex = (): string => {
     if (!colorTarget) return sidebarItemDefaultColor(config);
     if (colorTarget.kind === "pinned") {
-      return colorTarget.pin === "item" ? itemAccent : taskAccent;
+      const pin = colorTarget.pin;
+      const card = allCards.find((c) => c.kind === "pinned" && c.pin === pin);
+      if (card?.kind === "pinned") {
+        if (pin === "item") {
+          return config.sidebarItemCardColorOverride?.trim()
+            ? config.sidebarItemCardColorOverride
+            : sidebarItemDefaultColor(config);
+        }
+        return config.sidebarTaskCardColorOverride?.trim()
+          ? config.sidebarTaskCardColorOverride
+          : sidebarTaskDefaultColor(config);
+      }
     }
-    const t = config.savedTemplates.find((x) => x.id === colorTarget.id);
-    return t ? resolveTemplateCardColor(config, t) : sidebarItemDefaultColor(config);
+    const t =
+      colorTarget.kind === "template"
+        ? config.savedTemplates.find((x) => x.id === colorTarget.id)
+        : undefined;
+    return t
+      ? t.cardColor?.trim() || (t.source === "item" ? sidebarItemDefaultColor(config) : sidebarTaskDefaultColor(config))
+      : sidebarItemDefaultColor(config);
   };
 
   const applyColor = (hex: string) => {
@@ -260,139 +197,47 @@ export function Sidebar({
     }
   };
 
-  const renderTemplateCard = (t: SavedTemplate, dragHandle: ReactNode) => {
-    const isActive =
-      (activeView.kind === "template" || activeView.kind === "snapshot") && activeView.id === t.id;
-    const accent = resolveTemplateCardColor(config, t);
-
-    const hasItemActions = t.source === "item";
-    const hasTaskActions =
-      t.source === "task" && (onCompleteTaskFromTemplate || onAcceptTasksFromTemplate);
-    const withSidebarActions = hasItemActions || hasTaskActions;
-
-    const dropHover = templateDropHoverId === t.id;
-    const dropReject = templateDropRejectId === t.id;
-
-    return (
-      <div
-        data-template-drop
-        data-template-id={t.id}
-        data-template-source={t.source}
-        className={`card card--sidebar card--sidebar-template card--template${withSidebarActions ? " card--sidebar-with-actions" : ""}${hasItemActions ? " card--sidebar-item-template" : ""}${hasTaskActions ? " card--sidebar-task-template" : ""}${isActive ? " active" : ""}${dropHover ? " card--template-drop-hover" : ""}${dropReject ? " card--template-drop-reject" : ""}`}
-        style={sidebarCardAccentStyleObj(accent)}
-        title={formatSidebarCardCreatedAt(t.createdAt)}
-        onClick={() => {
-          if (filterSheetOpen) return;
-          onSelectTemplate(t.id);
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ type: "template", x: e.clientX, y: e.clientY, id: t.id, title: t.title });
-        }}
-      >
-        <button
-          type="button"
-          className="sidebar-card-delete-badge"
-          aria-label={`删除模板 ${t.title}`}
-          title="移入回收站"
-          onClick={(e) => {
-            e.stopPropagation();
-            onTemplateDelete(t.id, t.title);
-          }}
-        >
-          <span className="sidebar-card-delete-badge-glyph" aria-hidden>
-            −
-          </span>
-        </button>
-        <div className="sidebar-card-drag-row">{dragHandle}</div>
-        {hasItemActions ? (
-          <>
-            <div
-              className="card-template-actions card-template-actions--grid"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {t.items.length > 0 ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-tiny card-template-action card-template-action--send"
-                    onClick={() => onSendTemplateNow(t.title, t.items)}
-                  >
-                    一键发送
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-tiny card-template-action card-template-action--send"
-                    onClick={() => onBatchSend(t.id, t.title, t.items)}
-                  >
-                    批量发送
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="card-template-action-spacer" aria-hidden />
-                  <span className="card-template-action-spacer" aria-hidden />
-                </>
-              )}
-              <button
-                type="button"
-                className="btn btn-tiny card-template-action card-template-action--send"
-                onClick={() => onSendTemplateSelected?.(t.id)}
-              >
-                发送已勾选
-              </button>
-              {serverWideSendEnabled && onGlobalSendTemplate ? (
-                <button
-                  type="button"
-                  className="btn btn-tiny card-template-action card-template-action--send"
-                  onClick={() => onGlobalSendTemplate(t.title, t.items)}
-                >
-                  全服发送
-                </button>
-              ) : (
-                <span className="card-template-action-spacer" aria-hidden />
-              )}
-            </div>
-            <div className="card-title">{t.title}</div>
-          </>
-        ) : null}
-        {hasTaskActions ? (
-          <>
-            <div
-              className="card-template-actions card-template-actions--grid card-template-actions--task"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {onAcceptTasksFromTemplate ? (
-                <button
-                  type="button"
-                  className="btn btn-tiny card-template-action card-template-action--head"
-                  onClick={() => onAcceptTasksFromTemplate(t.id)}
-                >
-                  接取已勾选
-                </button>
-              ) : (
-                <span className="card-template-action-spacer" aria-hidden />
-              )}
-              {onCompleteTaskFromTemplate ? (
-                <button
-                  type="button"
-                  className="btn btn-tiny card-template-action card-template-action--head"
-                  onClick={() => onCompleteTaskFromTemplate(t.id)}
-                >
-                  完成已勾选
-                </button>
-              ) : (
-                <span className="card-template-action-spacer" aria-hidden />
-              )}
-            </div>
-            <div className="card-title">{t.title}</div>
-          </>
-        ) : null}
-        {!hasItemActions && !hasTaskActions ? (
-          <div className="card-title">{t.title}</div>
-        ) : null}
-      </div>
-    );
+  const cardRendererProps = {
+    config,
+    activeView,
+    filterSheetOpen,
+    addExpAccent,
+    addExpPresetBusy,
+    sproutAccent,
+    addSproutBusy,
+    resetMatchAccent,
+    clearMatchBusy,
+    uploadConfigAccent,
+    uploadConfigBusy,
+    serverWideSendEnabled,
+    templateDropHoverId,
+    templateDropRejectId,
+    onSelectItem,
+    onSelectTask,
+    onSelectAddExp,
+    onSelectUploadConfig,
+    onSelectTemplate,
+    onAddExpPresetMaxLevel,
+    onAddExpPresetRich,
+    onAddExpPresetRichAndMaxLevel,
+    onAddSproutOneClick,
+    onClearTimeoutMatch,
+    onUploadConfigPick,
+    onUploadConfigRestore,
+    onCompleteNextTaskFromPinned,
+    onSendTemplateNow,
+    onBatchSend,
+    onSendTemplateSelected,
+    onGlobalSendTemplate,
+    onCompleteTaskFromTemplate,
+    onAcceptTasksFromTemplate,
+    onTemplateDelete,
+    onPinnedContextMenu: (pin: PinnedMenuTarget, x: number, y: number) => {
+      setMenu({ type: "pinned", x, y, pin });
+    },
+    onTemplateContextMenu: (id: string, title: string, x: number, y: number) => {
+      setMenu({ type: "template", x, y, id, title });
+    },
   };
 
   return (
@@ -406,107 +251,41 @@ export function Sidebar({
         onPointerDown={dragScroll.handlers.onPointerDown}
         onClickCapture={dragScroll.onClickCapture}
       >
-      <div
-        className={`card card--sidebar card--sidebar-pinned${activeView.kind === "item" ? " active" : ""}`}
-        style={sidebarCardAccentStyleObj(itemAccent)}
-        onClick={() => {
-          if (filterSheetOpen) return;
-          onSelectItem();
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ type: "pinned", x: e.clientX, y: e.clientY, pin: "item" });
-        }}
-      >
-        <div className="card-title">全部道具</div>
-      </div>
-      <div
-        className={`card card--sidebar card--sidebar-pinned card--sidebar-task-pinned${onCompleteNextTaskFromPinned ? " card--sidebar-with-actions" : ""}${activeView.kind === "task" ? " active" : ""}`}
-        style={sidebarCardAccentStyleObj(taskAccent)}
-        onClick={() => {
-          if (filterSheetOpen) return;
-          onSelectTask();
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setMenu({ type: "pinned", x: e.clientX, y: e.clientY, pin: "task" });
-        }}
-      >
-        {onCompleteNextTaskFromPinned ? (
-          <>
-            <div
-              className="card-template-actions card-template-actions--grid card-template-actions--task"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="card-template-action-spacer" aria-hidden />
-              <button
-                type="button"
-                className="btn btn-tiny card-template-action card-template-action--head"
-                onClick={() => onCompleteNextTaskFromPinned()}
-              >
-                完成已勾选
-              </button>
-            </div>
-            <div className="card-title">全部任务</div>
-          </>
-        ) : (
-          <div className="card-title">全部任务</div>
-        )}
-      </div>
-      <div
-        className={`card card--sidebar card--sidebar-pinned card--sidebar-add-exp card--sidebar-with-actions${activeView.kind === "addExp" ? " active" : ""}`}
-        style={sidebarCardAccentStyleObj(addExpAccent)}
-        onClick={() => {
-          if (filterSheetOpen) return;
-          onSelectAddExp();
-        }}
-      >
-        <div
-          className="card-template-actions card-template-actions--grid card-template-actions--add-exp"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="btn btn-tiny card-template-action"
-            disabled={filterSheetOpen || addExpPresetBusy}
-            onClick={() => onAddExpPresetMaxLevel?.()}
-          >
-            一键满级
-          </button>
-          <button
-            type="button"
-            className="btn btn-tiny card-template-action"
-            disabled={filterSheetOpen || addExpPresetBusy}
-            onClick={() => onAddExpPresetRich?.()}
-          >
-            一键富翁
-          </button>
-          <button
-            type="button"
-            className="btn btn-tiny card-template-action"
-            disabled={filterSheetOpen || addExpPresetBusy}
-            onClick={() => onAddExpPresetRichAndMaxLevel?.()}
-          >
-            一键富翁满级
-          </button>
-        </div>
-        <div className="card-title">加经验加钱</div>
+        <SidebarCardDnD
+          layout="list"
+          cards={visibleCards}
+          onReorder={(orderedIds) => {
+            void onPersist(reorderSidebarCardSubset(config, orderedIds));
+          }}
+          renderCard={(descriptor, dragHandle) => (
+            <SidebarCardRenderer
+              {...cardRendererProps}
+              descriptor={descriptor}
+              mode="narrow"
+              dragHandle={dragHandle}
+            />
+          )}
+        />
       </div>
 
-      <TemplateDnDList
-        templates={templates}
-        onReorder={(ordered) => {
-          void onPersist({
-            ...config,
-            sidebarTemplateOrder: ordered.map((t) => t.id),
-          });
-        }}
-        renderCard={renderTemplateCard}
-      />
+      <div className="sidebar-gallery-footer">
+        <button
+          type="button"
+          className="btn sidebar-gallery-open-btn"
+          disabled={filterSheetOpen}
+          onClick={onOpenGallery}
+          title="全屏查看与管理侧栏卡片"
+        >
+          <span className="sidebar-gallery-open-btn-icon" aria-hidden>
+            ⛶
+          </span>
+          全屏
+        </button>
       </div>
 
       {menu?.type === "pinned" ? (
         <div
+          ref={menuRef}
           className="context-menu"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}
@@ -550,6 +329,7 @@ export function Sidebar({
 
       {menu?.type === "template" ? (
         <div
+          ref={menuRef}
           className="context-menu"
           style={{ left: menu.x, top: menu.y }}
           onClick={(e) => e.stopPropagation()}

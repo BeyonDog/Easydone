@@ -1,4 +1,19 @@
-import type { GtopRegionServerEntry } from "./gtopClient.ts";
+import type { GtopEnvEntry, GtopRegionServerEntry } from "./gtopClient.ts";
+
+/** GTOP 设置固定默认环境（只读，不可由用户切换） */
+export const GTOP_FIXED_ENV_NAME = "krad-office内网测试环境";
+
+export function findGtopEnvByName(
+  envs: GtopEnvEntry[],
+  name: string = GTOP_FIXED_ENV_NAME,
+): GtopEnvEntry | undefined {
+  const norm = name.trim();
+  const exact = envs.find((e) => e.name.trim() === norm);
+  if (exact) return exact;
+  return envs.find(
+    (e) => e.name.includes("krad-office") && e.name.includes("内网测试"),
+  );
+}
 
 /** GTOP 设置「分支环境」下拉固定展示项（名称与抓包一致；id 由 API 按名解析） */
 export const GTOP_BRANCH_SERVER_ALLOWLIST = [
@@ -7,6 +22,8 @@ export const GTOP_BRANCH_SERVER_ALLOWLIST = [
   "GNG-pt01",
   "GNG-pt02",
   "GNG-rct03",
+  "GNG-rct04",
+  "GNG-rct05",
   "krad-rct01",
   "krad-rct02",
   "krad-sbt01",

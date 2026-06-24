@@ -119,10 +119,11 @@ fn parse_add_exp_result(text: &str) -> Option<AdminAddExpResult> {
 }
 
 fn gmt_exec_success_message(body: &Value) -> String {
-    if body.get("name").and_then(|v| v.as_str()) == Some("AdminAddExp") {
-        "加经验成功".into()
-    } else {
-        "发放成功".into()
+    match body.get("name").and_then(|v| v.as_str()) {
+        Some("AdminAddExp") => "加经验成功".into(),
+        Some("AdminClearTimeoutMatchInfo") => "重置服务器匹配成功".into(),
+        Some("AddSproutScore") => "加豆芽分成功".into(),
+        _ => "发放成功".into(),
     }
 }
 

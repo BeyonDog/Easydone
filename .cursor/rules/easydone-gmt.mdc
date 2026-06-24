@@ -1,0 +1,37 @@
+---
+description: GMT 发信、分支环境、磨损/耐久载荷约定
+globs: src/lib/gmt*.ts,src/lib/sendTemplate.ts,src/lib/gmtApi.contract.ts,src/lib/branchEnvDisplay.ts,src/lib/healGmtEnvConfig.ts,src/lib/itemWearValue.ts
+alwaysApply: false
+---
+
+# GMT 发信约定
+
+以 `src/lib/gmtApi.contract.ts` 与 `gmtApi.contract.test.ts` 为唯一真相来源。
+
+## 道具字段（reward_items）
+
+| 道具类型 | `detail.additional_info` | `init_params` |
+|----------|--------------------------|---------------|
+| 武器/防具 | `wear_value`（0–100） | `init_wear_value` / 全服 `initWearValue` |
+| 钥匙/绷带/甲修 | `durability`（0–初始耐久） | **禁止** `init_durability` / `initDurability` |
+
+耐久类道具 **只** 在 `additional_info.durability` 写入；`init_params` 保持默认骨架。
+
+## 单发 vs 全服
+
+- **单发 AdminSendMail**：`init_params` 用 **snake_case**（`init_wear_value`）
+- **全服邮件**：`init_params` 用 **camelCase**（`initWearValue`）
+
+## 分支环境
+
+- 下拉展示：`branchEnvDisplay.ts`（含双 `rct01` 消歧：`protocol` 1=GSGCI，2=GRPC）
+- 请求体 `param.env`：API 返回的 **环境 name**（短码如 `rct01`）
+- HTTP 头 `env`：**gmtEnvId**（数字 id）；未选 id 时 `gmtEnvSelectionBlockMessage` 应拦截
+- 选项 `value` 用 env **id**，配置持久化 `gmtEnvName` + `gmtEnvId`
+
+## 改动检查清单
+
+1. 更新 `gmtApi.contract.ts`
+2. 更新 `sendTemplate.ts` / `App.tsx` 发送路径（含模板、批量、全服）
+3. `types.ts` 与 `src-tauri/src/main.rs` 的 `SendTemplateItem` 字段对齐
+4. 跑 `npm test`（含 `gmtApi.contract.test.ts`）
