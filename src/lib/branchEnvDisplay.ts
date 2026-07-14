@@ -14,6 +14,9 @@ export const BRANCH_ENV_DISPLAY_ORDER: readonly string[] = [
   "(GRPC) sbt01",
   "(GRPC) rct02",
   "(GRPC) rct01",
+  "kd-cn-rct01",
+  "kd-cn-rct02",
+  "kd-cn-sbt01",
 ] as const;
 
 type BranchGroup = "GRPC" | "GSGCI";
@@ -82,7 +85,8 @@ function nameHasGroup(norm: string, group: BranchGroup): boolean {
 }
 
 function extractShortCode(norm: string): string | null {
-  for (const spec of BRANCH_ENV_SPECS) {
+  const byLenDesc = [...BRANCH_ENV_SPECS].sort((a, b) => b.code.length - a.code.length);
+  for (const spec of byLenDesc) {
     const code = spec.code;
     if (norm === code || norm.endsWith(`-${code}`) || norm.endsWith(`_${code}`) || norm.endsWith(`/${code}`)) {
       return code;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ITEM_TYPE_REMARK_PRESET_EMOTE, ITEM_TYPE_REMARK_PRESET_FITTING_ROOM } from "./lib/xlsxHelpers";
-import { FilterChipRowShell, PinnedMoreChipRow, QualityChipRow } from "./FilterChipBarShared";
+import { qualityDotColor } from "./lib/qualityColors";
+import { FilterChipRowShell, PinnedMoreChipRow } from "./FilterChipBarShared";
 
 export const SEASON_ITEM_CHIP_KEY = "赛季物品";
 
@@ -29,7 +30,8 @@ export type ItemFilterChipBarProps = {
   qualitySelected: string[];
   typeRemarkPinned: string[];
   typeRemarkMore: string[];
-  qualityBarKeys: string[];
+  qualityPinned: string[];
+  qualityMore: string[];
   showEmotePin: boolean;
   showFittingRoomSkinPin: boolean;
   showTypeRemarkPins: boolean;
@@ -62,7 +64,8 @@ export function ItemFilterChipBar({
   qualitySelected,
   typeRemarkPinned,
   typeRemarkMore,
-  qualityBarKeys,
+  qualityPinned,
+  qualityMore,
   showEmotePin,
   showFittingRoomSkinPin,
   showTypeRemarkPins,
@@ -82,10 +85,13 @@ export function ItemFilterChipBar({
 }: ItemFilterChipBarProps) {
   const [customMoreOpen, setCustomMoreOpen] = useState(false);
   const [typeMoreOpen, setTypeMoreOpen] = useState(false);
+  const [qualityMoreOpen, setQualityMoreOpen] = useState(false);
   const customMoreRef = useRef<HTMLDivElement>(null);
   const typeMoreRef = useRef<HTMLDivElement>(null);
+  const qualityMoreRef = useRef<HTMLDivElement>(null);
   const customMoreBtnRef = useRef<HTMLButtonElement>(null);
   const typeMoreBtnRef = useRef<HTMLButtonElement>(null);
+  const qualityMoreBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!customMoreOpen) return;
@@ -108,6 +114,17 @@ export function ItemFilterChipBar({
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [typeMoreOpen]);
+
+  useEffect(() => {
+    if (!qualityMoreOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (qualityMoreRef.current && !qualityMoreRef.current.contains(e.target as Node)) {
+        setQualityMoreOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [qualityMoreOpen]);
 
   const filterTypeRemarkKey = (key: string) => {
     if (key === SEASON_ITEM_CHIP_KEY) return showSeasonRow;
@@ -175,15 +192,19 @@ export function ItemFilterChipBar({
         clearDisabled={qualityClearDisabled}
       >
         {showQualityRow ? (
-          <div className="filter-chip-row-chips">
-            <QualityChipRow
-              items={qualityBarKeys}
-              selectedKeys={qualitySelected}
-              onToggle={onToggleQuality}
-              onReorder={onReorderQuality}
-              onDemoteKey={onDemoteQuality}
-            />
-          </div>
+          <PinnedMoreChipRow
+            barKeys={qualityPinned}
+            moreKeys={qualityMore}
+            selectedKeys={qualitySelected}
+            onToggle={onToggleQuality}
+            onReorderBar={onReorderQuality}
+            onDemoteKey={onDemoteQuality}
+            qualityDotForKey={qualityDotColor}
+            moreOpen={qualityMoreOpen}
+            setMoreOpen={setQualityMoreOpen}
+            moreRef={qualityMoreRef}
+            moreButtonRef={qualityMoreBtnRef}
+          />
         ) : (
           <span className="filter-chip-row-muted">当前表无「物品品质」列</span>
         )}

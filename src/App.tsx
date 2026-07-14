@@ -171,6 +171,7 @@ import {
 } from "./lib/operationLog";
 import { OperationLogPanel } from "./OperationLogPanel";
 import { mergeItemTypeRemarkOptionKeys, rowPassesItemTableFilter } from "./lib/itemTableFilter";
+import { splitChipBarPinnedAndMore } from "./lib/chipBarOrder.ts";
 import {
   cloneColumnValueFilters,
   collectColumnUniqueValues,
@@ -1985,14 +1986,15 @@ export default function App() {
     config?.itemTableFilter?.chipBarTypeRemarkOrder,
   ]);
 
-  const chipQualityBarKeys = useMemo(() => {
-    const saved = config?.itemTableFilter?.chipBarQualityOrder;
-    if (saved?.length) {
-      const allSet = new Set(itemQualityAllKeys);
-      return saved.filter((k) => allSet.has(k));
-    }
-    return mergeKeyOrder(itemQualityAllKeys, null, sortQualityRest);
-  }, [itemQualityAllKeys, config?.itemTableFilter?.chipBarQualityOrder]);
+  const { pinned: chipQualityPinned, more: chipQualityMore } = useMemo(
+    () =>
+      splitChipBarPinnedAndMore(
+        itemQualityAllKeys,
+        config?.itemTableFilter?.chipBarQualityOrder,
+        itemQualityAllKeys,
+      ),
+    [itemQualityAllKeys, config?.itemTableFilter?.chipBarQualityOrder],
+  );
 
   const chipTypeRemarkMore = useMemo(() => {
     const pin = new Set<string>(chipTypeRemarkPinned);
@@ -6168,7 +6170,8 @@ export default function App() {
               qualitySelected={activeItemFilterForChip.qualityKeys}
               typeRemarkPinned={[...chipTypeRemarkPinned]}
               typeRemarkMore={chipTypeRemarkMore}
-              qualityBarKeys={chipQualityBarKeys}
+              qualityPinned={[...chipQualityPinned]}
+              qualityMore={chipQualityMore}
               onReorderTypeRemark={(orderedKeys) =>
                 updateItemFilterPersist((d) => ({
                   ...d,
@@ -6185,12 +6188,18 @@ export default function App() {
                 }))
               }
               onReorderQuality={(orderedKeys) =>
-                updateItemFilterPersist((d) => ({ ...d, chipBarQualityOrder: orderedKeys }))
+                updateItemFilterPersist((d) => ({
+                  ...d,
+                  chipBarQualityOrder: sanitizeChipBarOrder(orderedKeys, itemQualityAllKeys),
+                }))
               }
               onDemoteQuality={(key) =>
                 updateItemFilterPersist((d) => ({
                   ...d,
-                  chipBarQualityOrder: chipQualityBarKeys.filter((k) => k !== key),
+                  chipBarQualityOrder: sanitizeChipBarOrder(
+                    chipQualityPinned.filter((k) => k !== key),
+                    itemQualityAllKeys,
+                  ),
                 }))
               }
               showEmotePin={itemFilterColIdx.remark >= 0}

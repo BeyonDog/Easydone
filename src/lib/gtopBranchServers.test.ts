@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   findGtopEnvByName,
+  GTOP_BRANCH_SERVER_ALLOWLIST,
   GTOP_FIXED_ENV_NAME,
   missingGtopBranchServerNames,
   resolveGtopBranchServerOptions,
@@ -41,5 +42,19 @@ describe("resolveGtopBranchServerOptions", () => {
     const sbt = opts.find((o) => o.name === "krad-sbt01");
     assert.equal(sbt?.id, "128");
     assert.deepEqual(missingGtopBranchServerNames(opts).length, opts.length - 2);
+  });
+
+  it("includes kd-cn hosts and resolves their ids", () => {
+    assert.ok(GTOP_BRANCH_SERVER_ALLOWLIST.includes("kd-cn-rct01"));
+    assert.ok(GTOP_BRANCH_SERVER_ALLOWLIST.includes("kd-cn-rct02"));
+    assert.ok(GTOP_BRANCH_SERVER_ALLOWLIST.includes("kd-cn-sbt01"));
+    const opts = resolveGtopBranchServerOptions([
+      { id: "201", name: "kd-cn-rct01" },
+      { id: "202", name: "kd-cn-rct02" },
+      { id: "203", name: "kd-cn-sbt01" },
+    ]);
+    assert.equal(opts.find((o) => o.name === "kd-cn-rct01")?.id, "201");
+    assert.equal(opts.find((o) => o.name === "kd-cn-rct02")?.id, "202");
+    assert.equal(opts.find((o) => o.name === "kd-cn-sbt01")?.id, "203");
   });
 });

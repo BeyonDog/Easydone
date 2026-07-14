@@ -20,6 +20,14 @@ describe("branchEnvDisplay", () => {
     assert.equal(getBranchEnvDisplayLabel("GNG-rct05"), "(GRPC) rct05");
   });
 
+  it("maps kd-cn hosts to exact display names (not bare rct01/sbt01)", () => {
+    assert.equal(getBranchEnvDisplayLabel("kd-cn-rct01"), "kd-cn-rct01");
+    assert.equal(getBranchEnvDisplayLabel("kd-cn-rct02"), "kd-cn-rct02");
+    assert.equal(getBranchEnvDisplayLabel("kd-cn-sbt01"), "kd-cn-sbt01");
+    assert.notEqual(getBranchEnvDisplayLabel("kd-cn-rct01"), "(GRPC) rct01");
+    assert.notEqual(getBranchEnvDisplayLabel("kd-cn-rct01"), "(GSGCI) rct01");
+  });
+
   it("maps protocol to branch group", () => {
     assert.equal(branchGroupFromProtocol(1), "GSGCI");
     assert.equal(branchGroupFromProtocol(2), "GRPC");
@@ -66,8 +74,11 @@ describe("branchEnvDisplay", () => {
   });
 
   it("preserves exact display strings count", () => {
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 14);
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 17);
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[1], "(GRPC)pt01");
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[9], "(GRPC)CCS");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[14], "kd-cn-rct01");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[15], "kd-cn-rct02");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[16], "kd-cn-sbt01");
   });
 });

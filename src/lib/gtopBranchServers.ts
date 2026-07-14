@@ -28,6 +28,9 @@ export const GTOP_BRANCH_SERVER_ALLOWLIST = [
   "krad-rct02",
   "krad-sbt01",
   "krad-sbt02",
+  "kd-cn-rct01",
+  "kd-cn-rct02",
+  "kd-cn-sbt01",
 ] as const;
 
 export type GtopBranchServerOption = {

@@ -1,5 +1,4 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { qualityDotColor } from "./lib/qualityColors";
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -121,6 +120,7 @@ export type PinnedMoreChipRowProps = {
   moreChipShowRemove?: boolean;
   onRemoveFromMore?: (key: string) => void;
   barClassName?: string;
+  qualityDotForKey?: (key: string) => string | undefined;
 };
 
 export function PinnedMoreChipRow({
@@ -139,6 +139,7 @@ export function PinnedMoreChipRow({
   moreChipShowRemove,
   onRemoveFromMore,
   barClassName,
+  qualityDotForKey,
 }: PinnedMoreChipRowProps) {
   const barRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragSource | null>(null);
@@ -368,6 +369,7 @@ export function PinnedMoreChipRow({
                 selected={selectedKeys.includes(key)}
                 onClick={() => {}}
                 prefix={labelPrefix?.(key)}
+                qualityDot={qualityDotForKey?.(key)}
                 showClose={Boolean(onDemoteKey)}
                 onClose={() => onDemoteKey?.(key)}
                 onChipPointerDown={onReorderBar ? onBarChipPointerDown(i, key) : undefined}
@@ -410,6 +412,7 @@ export function PinnedMoreChipRow({
                       selected={selectedKeys.includes(key)}
                       onClick={() => {}}
                       prefix={labelPrefix?.(key)}
+                      qualityDot={qualityDotForKey?.(key)}
                       showRemove={moreChipShowRemove}
                       onRemove={() => onRemoveFromMore?.(key)}
                       onChipPointerDown={onReorderBar ? onMoreChipPointerDown(key) : undefined}
@@ -421,150 +424,6 @@ export function PinnedMoreChipRow({
             </div>
           ) : null}
         </div>
-      ) : null}
-    </div>
-  );
-}
-
-export function QualityChipRow({
-  items,
-  selectedKeys,
-  onToggle,
-  onReorder,
-  onDemoteKey,
-}: {
-  items: string[];
-  selectedKeys: string[];
-  onToggle: (key: string) => void;
-  onReorder?: (orderedKeys: string[]) => void;
-  onDemoteKey?: (key: string) => void;
-}) {
-  const rowRef = useRef<HTMLDivElement>(null);
-  const fromRef = useRef<number | null>(null);
-  const itemsAtDragRef = useRef<string[]>([]);
-  const pendingClickRef = useRef<string | null>(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
-  const [dropIdx, setDropIdx] = useState<number | null>(null);
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
-
-  const endDrag = useCallback(() => {
-    fromRef.current = null;
-    itemsAtDragRef.current = [];
-    pendingClickRef.current = null;
-    setDragFrom(null);
-    setDropIdx(null);
-    setDraggingKey(null);
-  }, []);
-
-  const onChipPointerDown = useCallback(
-    (index: number, key: string) => (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (!onReorder || e.button !== 0) return;
-      e.preventDefault();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      fromRef.current = index;
-      itemsAtDragRef.current = [...items];
-      pendingClickRef.current = key;
-      setDragFrom(index);
-      setDropIdx(index);
-      setDraggingKey(key);
-
-      const onMove = (ev: PointerEvent) => {
-        if (fromRef.current === null) return;
-        if (
-          Math.abs(ev.clientX - startX) < DRAG_THRESHOLD_PX &&
-          Math.abs(ev.clientY - startY) < DRAG_THRESHOLD_PX
-        ) {
-          return;
-        }
-        pendingClickRef.current = null;
-        const root = rowRef.current;
-        if (!root) return;
-        const chips = root.querySelectorAll<HTMLElement>("[data-chip-dnd-item]");
-        const n = chips.length;
-        let insert = n;
-        for (let i = 0; i < n; i++) {
-          const r = chips[i].getBoundingClientRect();
-          const mid = r.left + r.width / 2;
-          if (ev.clientX < mid) {
-            insert = i;
-            break;
-          }
-        }
-        setDropIdx(insert);
-      };
-
-      const onUp = (ev: PointerEvent) => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        window.removeEventListener("pointercancel", onUp);
-        const clickKey = pendingClickRef.current;
-        if (clickKey) {
-          onToggle(clickKey);
-          endDrag();
-          return;
-        }
-        const from = fromRef.current;
-        if (from === null) {
-          endDrag();
-          return;
-        }
-        const root = rowRef.current;
-        let insert = itemsAtDragRef.current.length;
-        if (root) {
-          const chips = root.querySelectorAll<HTMLElement>("[data-chip-dnd-item]");
-          const n = chips.length;
-          insert = n;
-          for (let i = 0; i < n; i++) {
-            const r = chips[i].getBoundingClientRect();
-            const mid = r.left + r.width / 2;
-            if (ev.clientX < mid) {
-              insert = i;
-              break;
-            }
-          }
-        }
-        const next = [...itemsAtDragRef.current];
-        const [row] = next.splice(from, 1);
-        let to = insert;
-        if (to > from) to -= 1;
-        next.splice(to, 0, row);
-        onReorder(next);
-        endDrag();
-      };
-
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      window.addEventListener("pointercancel", onUp);
-    },
-    [items, onReorder, onToggle, endDrag],
-  );
-
-  return (
-    <div
-      className="filter-chip-row-chips-inner filter-chip-row-chips-inner--scroll"
-      ref={rowRef}
-    >
-      {items.map((key, i) => {
-        const showBefore = dropIdx === i && dragFrom !== null && dragFrom !== i;
-        return (
-          <span key={key} className="filter-chip-dnd-slot" data-chip-dnd-item>
-            {showBefore ? <span className="filter-chip-drop-indicator" aria-hidden /> : null}
-            <FilterChip
-              label={key}
-              selected={selectedKeys.includes(key)}
-              onClick={onReorder ? () => {} : () => onToggle(key)}
-              qualityDot={qualityDotColor(key)}
-              showClose={Boolean(onDemoteKey)}
-              onClose={() => onDemoteKey?.(key)}
-              onChipPointerDown={onReorder ? onChipPointerDown(i, key) : undefined}
-              dragging={draggingKey === key}
-            />
-          </span>
-        );
-      })}
-      {dropIdx === items.length && dragFrom !== null ? (
-        <span className="filter-chip-drop-indicator filter-chip-drop-indicator--end" aria-hidden />
       ) : null}
     </div>
   );
