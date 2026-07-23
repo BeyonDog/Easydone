@@ -3,11 +3,13 @@ import {
   buildAdminAddExpExecBody,
   buildAdminClearTimeoutMatchInfoExecBody,
   buildAdminFinishTaskExecBody,
+  buildAdminModifyRankPointsExecBody,
   buildAdminSendGlobalMailExecBody,
   buildAdminSendMailExecBody,
   buildAddSproutScoreExecBody,
   type AdminAddExpBuildInput,
   type AdminClearTimeoutMatchInfoBuildInput,
+  type AdminModifyRankPointsBuildInput,
   type AddSproutScoreBuildInput,
   type AdminFinishTaskBuildInput,
   type AdminSendGlobalMailBuildInput,
@@ -15,6 +17,15 @@ import {
 } from "./gmtApi.contract.ts";
 
 export const DEFAULT_GMT_BASE_URL = "https://test-krad.stdgmtool.web.garena.cn";
+export const CN_GMT_BASE_URL = "https://test-gngcnprod.stdgmtool.web.garena.cn";
+export const PRELIVE_GMT_BASE_URL = "https://pre-krad.stdgmtool.web.garena.cn";
+
+export function isPreliveGmtEnabled(c: {
+  gmtPlatform?: "overseas" | "cn";
+  gmtPreliveEnabled?: boolean;
+}): boolean {
+  return c.gmtPlatform !== "cn" && Boolean(c.gmtPreliveEnabled);
+}
 
 /** `gmt_exec` 成功且为 AdminAddExp 时服务端可能返回结构化结果（Rust camelCase）。 */
 export type AdminAddExpInvokeResultPayload = {
@@ -31,6 +42,8 @@ export type GmtExecInvokeResult = {
 };
 
 export type GmtEnvEntry = { id: number; name: string; protocol?: number | null };
+
+export const PRELIVE_GMT_ENV: GmtEnvEntry = { id: 2, name: "PreLive-SG", protocol: 2 };
 
 export type GmtSessionSlice = {
   gmtBaseUrl: string;
@@ -132,6 +145,19 @@ export async function gmtExecAddSproutScore(
   });
 }
 
+export async function gmtExecAdminModifyRankPoints(
+  slice: GmtSessionSlice,
+  input: AdminModifyRankPointsBuildInput,
+): Promise<GmtExecInvokeResult> {
+  const body = buildAdminModifyRankPointsExecBody(input);
+  return invoke<GmtExecInvokeResult>("gmt_exec", {
+    baseUrl: slice.gmtBaseUrl.trim() || DEFAULT_GMT_BASE_URL,
+    cookie: slice.gmtCookie,
+    envHeader: slice.gmtEnvId != null ? String(slice.gmtEnvId) : null,
+    bodyJson: JSON.stringify(body),
+  });
+}
+
 export async function gmtOpenLoginWindow(baseUrl: string): Promise<void> {
   await invoke("gmt_open_login_window", {
     baseUrl: baseUrl.trim() || DEFAULT_GMT_BASE_URL,
@@ -147,10 +173,28 @@ export async function gmtCloseLoginWindow(): Promise<void> {
 }
 
 export function gmtSessionSliceFromConfig(c: {
+  gmtPlatform?: "overseas" | "cn";
+  gmtPreliveEnabled?: boolean;
   gmtBaseUrl?: string;
   gmtCookie?: string;
+  gmtCnCookie?: string;
   gmtEnvId?: number | null;
 }): GmtSessionSlice {
+  const isCn = c.gmtPlatform === "cn";
+  if (isCn) {
+    return {
+      gmtBaseUrl: CN_GMT_BASE_URL,
+      gmtCookie: c.gmtCnCookie ?? "",
+      gmtEnvId: c.gmtEnvId ?? null,
+    };
+  }
+  if (isPreliveGmtEnabled(c)) {
+    return {
+      gmtBaseUrl: PRELIVE_GMT_BASE_URL,
+      gmtCookie: c.gmtCookie ?? "",
+      gmtEnvId: PRELIVE_GMT_ENV.id,
+    };
+  }
   return {
     gmtBaseUrl: c.gmtBaseUrl?.trim() || DEFAULT_GMT_BASE_URL,
     gmtCookie: c.gmtCookie ?? "",

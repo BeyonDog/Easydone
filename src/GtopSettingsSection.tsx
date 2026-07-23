@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppConfig } from "./types.ts";
 import {
   findGtopEnvByName,
+  GTOP_CN_ENV_NAME,
   GTOP_FIXED_ENV_NAME,
   missingGtopBranchServerNames,
   resolveGtopBranchServerOptions,
@@ -31,12 +32,25 @@ function applyFixedEnvToConfig(
   const prevId = config.gtopEnvId ?? "";
   if (env.id === prevId && config.gtopEnvName === env.name) return null;
   const envChanged = env.id !== prevId;
+  const isCn = config.gmtPlatform === "cn";
   return {
     ...config,
     gtopEnvId: env.id,
     gtopEnvName: env.name,
+    ...(isCn
+      ? { gtopCnEnvId: env.id, gtopCnEnvName: env.name }
+      : { gtopOverseasEnvId: env.id, gtopOverseasEnvName: env.name }),
     ...(envChanged
-      ? { gtopRegionServerId: null, gtopRegionServerName: null }
+      ? {
+          gtopRegionServerId: null,
+          ...(isCn
+            ? { gtopCnRegionServerId: null }
+            : {
+                gtopRegionServerName: null,
+                gtopOverseasRegionServerId: null,
+                gtopOverseasRegionServerName: null,
+              }),
+        }
       : {}),
   };
 }
@@ -56,21 +70,32 @@ export function GtopSettingsSection({
   const [loading, setLoading] = useState(false);
   const [fixedEnvMissing, setFixedEnvMissing] = useState(false);
 
-  const slice = gtopSessionSliceFromConfig(config);
-  const branchServerOptions = useMemo(() => resolveGtopBranchServerOptions(servers), [servers]);
+  const slice = useMemo(
+    () => gtopSessionSliceFromConfig(config),
+    [config.gtopBaseUrl, config.gtopCookie, config.gtopProject],
+  );
+  const platform = config.gmtPlatform;
+  const fixedEnvName = platform === "cn" ? GTOP_CN_ENV_NAME : GTOP_FIXED_ENV_NAME;
+  const branchServerOptions = useMemo(
+    () => resolveGtopBranchServerOptions(servers, platform),
+    [platform, servers],
+  );
   const missingBranchNames = useMemo(() => missingGtopBranchServerNames(branchServerOptions), [branchServerOptions]);
   const configRef = useRef(config);
   configRef.current = config;
 
-  const fixedEnvResolved = useMemo(() => findGtopEnvByName(envs), [envs]);
+  const fixedEnvResolved = useMemo(
+    () => findGtopEnvByName(envs, fixedEnvName),
+    [envs, fixedEnvName],
+  );
   const fixedEnvLinked =
     Boolean(config.gtopEnvId?.trim()) &&
-    (config.gtopEnvName === GTOP_FIXED_ENV_NAME ||
+    (config.gtopEnvName === fixedEnvName ||
       config.gtopEnvId === fixedEnvResolved?.id);
 
   const syncFixedEnv = useCallback(
     (list: GtopEnvEntry[]) => {
-      const fixed = findGtopEnvByName(list);
+      const fixed = findGtopEnvByName(list, fixedEnvName);
       if (!fixed) {
         setFixedEnvMissing(true);
         return;
@@ -79,7 +104,7 @@ export function GtopSettingsSection({
       const next = applyFixedEnvToConfig(configRef.current, fixed);
       if (next) void onPersist(next);
     },
-    [onPersist],
+    [fixedEnvName, onPersist],
   );
 
   const refreshServers = useCallback(
@@ -91,12 +116,26 @@ export function GtopSettingsSection({
       try {
         const list = await gtopFetchRegionServers(slice, envId);
         setServers(list);
+        const current = configRef.current;
+        if (current.gmtPlatform === "cn" && current.gtopRegionServerName) {
+          const target = resolveGtopBranchServerOptions(list, "cn").find(
+            (item) => item.name === current.gtopRegionServerName,
+          );
+          if (target?.id && target.id !== current.gtopRegionServerId) {
+            void onPersist({
+              ...current,
+              gtopRegionServerId: target.id,
+              gtopCnRegionServerId: target.id,
+              gtopCnRegionServerName: target.name,
+            });
+          }
+        }
       } catch (e) {
         setLoadErr(e instanceof Error ? e.message : String(e));
         setServers([]);
       }
     },
-    [config.gtopCookie, gtopLoggedIn, slice],
+    [config.gtopCookie, gtopLoggedIn, onPersist, slice],
   );
 
   const refreshEnvs = useCallback(async () => {
@@ -111,7 +150,7 @@ export function GtopSettingsSection({
       const list = await gtopFetchEnvs(slice);
       setEnvs(list);
       syncFixedEnv(list);
-      const fixed = findGtopEnvByName(list);
+      const fixed = findGtopEnvByName(list, fixedEnvName);
       if (fixed?.id) await refreshServers(fixed.id);
     } catch (e) {
       setLoadErr(e instanceof Error ? e.message : String(e));
@@ -119,7 +158,7 @@ export function GtopSettingsSection({
     } finally {
       setLoading(false);
     }
-  }, [config.gtopCookie, gtopLoggedIn, refreshServers, slice, syncFixedEnv]);
+  }, [config.gtopCookie, fixedEnvName, gtopLoggedIn, refreshServers, slice, syncFixedEnv]);
 
   useEffect(() => {
     void resolveTaskCsvPath(config.excelWorkspaceRoot).then(setTaskCsvPath);
@@ -141,7 +180,7 @@ export function GtopSettingsSection({
         if (cancelled) return;
         setEnvs(list);
         syncFixedEnv(list);
-        const fixed = findGtopEnvByName(list);
+        const fixed = findGtopEnvByName(list, fixedEnvName);
         if (fixed?.id) await refreshServers(fixed.id);
       } catch (e) {
         if (!cancelled) {
@@ -153,7 +192,7 @@ export function GtopSettingsSection({
     return () => {
       cancelled = true;
     };
-  }, [gtopLoggedIn, config.gtopCookie, refreshServers, slice, syncFixedEnv]);
+  }, [gtopLoggedIn, config.gtopCookie, fixedEnvName, refreshServers, slice, syncFixedEnv]);
 
   const pickServer = (serverId: string) => {
     const prev = config.gtopRegionServerId ?? "";
@@ -163,6 +202,8 @@ export function GtopSettingsSection({
       ...config,
       gtopRegionServerId: serverId || null,
       gtopRegionServerName: opt?.name ?? null,
+      gtopOverseasRegionServerId: serverId || null,
+      gtopOverseasRegionServerName: opt?.name ?? null,
     });
   };
 
@@ -202,7 +243,7 @@ export function GtopSettingsSection({
       <div className="field">
         <label>默认环境</label>
         <div className="path">
-          {GTOP_FIXED_ENV_NAME}
+          {fixedEnvName}
           <span className="muted" style={{ marginLeft: "0.35rem" }}>
             {fixedEnvHint}
           </span>
@@ -212,21 +253,22 @@ export function GtopSettingsSection({
         <label>分支环境</label>
         <select
           className="gmt-select"
-          disabled={!gtopLoggedIn || !config.gtopEnvId}
+          disabled={platform === "cn" || !gtopLoggedIn || !config.gtopEnvId}
           value={config.gtopRegionServerId ?? ""}
           onChange={(e) => pickServer(e.target.value)}
         >
           <option value="">请选择</option>
           {branchServerOptions.map((s) => (
             <option key={s.name} value={s.id ?? ""} disabled={!s.id}>
-              {s.name}
+              {s.displayName}
               {!s.id ? "（未在 GTOP 中找到）" : ""}
             </option>
           ))}
         </select>
       </div>
+      {platform === "cn" ? <p className="help">国服区服跟随顶栏服务器选择。</p> : null}
       {fixedEnvMissing && gtopLoggedIn ? (
-        <div className="error">GTOP 未找到环境：{GTOP_FIXED_ENV_NAME}</div>
+        <div className="error">GTOP 未找到环境：{fixedEnvName}</div>
       ) : null}
       {missingBranchNames.length > 0 ? (
         <div className="error">GTOP 缺少区服：{missingBranchNames.join("、")}</div>

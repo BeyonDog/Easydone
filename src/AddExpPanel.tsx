@@ -18,6 +18,7 @@ import {
   gmtSessionSliceFromConfig,
   type AdminAddExpInvokeResultPayload,
 } from "./lib/gmtClient.ts";
+import { gmtRequestRegions } from "./lib/gmtPlatform.ts";
 import {
   formatAddExpResultExtra,
   type LogGmtPartial,
@@ -188,12 +189,13 @@ export function AddExpPanel({
     setLastResult(null);
     try {
       const slice = gmtSessionSliceFromConfig(config);
+      const regions = gmtRequestRegions(config);
       const r = await gmtExecAdminAddExp(slice, {
         envName: config.gmtEnvName!.trim(),
         accountId: gmtAccountIdDraft.trim(),
         exp: formatExpAmountForApi(n),
-        lockRegion: config.gmtLockRegion?.trim() || "SG",
-        notiRegion: config.gmtNotiRegion?.trim() || "SG",
+        lockRegion: regions.lockRegion,
+        notiRegion: regions.notiRegion,
       });
       const msg = r.ok ? r.message || "加经验成功" : formatExecMessage(config, r.message || "加经验失败");
       logAddExp(r.ok ? "success" : "failure", msg, {

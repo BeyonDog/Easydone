@@ -17,6 +17,9 @@ export const BRANCH_ENV_DISPLAY_ORDER: readonly string[] = [
   "kd-cn-rct01",
   "kd-cn-rct02",
   "kd-cn-sbt01",
+  "(GRPC) CNRCT02",
+  "(GRPC) CNRCT01",
+  "(GRPC) CNSBT",
 ] as const;
 
 type BranchGroup = "GRPC" | "GSGCI";

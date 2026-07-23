@@ -39,7 +39,10 @@ export type SidebarProps = {
   onAddExpPresetMaxLevel?: () => void;
   onAddExpPresetRich?: () => void;
   onAddExpPresetRichAndMaxLevel?: () => void;
+  onSelectRankUp: () => void;
+  rankUpAccent: string;
   onSelectUploadConfig: () => void;
+  onSelectTaskMapCheck: () => void;
   sproutAccent: string;
   addSproutBusy?: boolean;
   onAddSproutOneClick?: () => void;
@@ -50,6 +53,8 @@ export type SidebarProps = {
   uploadConfigBusy?: boolean;
   onUploadConfigPick?: () => void;
   onUploadConfigRestore?: () => void;
+  taskMapCheckAccent: string;
+  taskMapCheckBusy?: boolean;
   onCloseMenus: () => void;
   onOpenGallery: () => void;
   templateDropHoverId?: string | null;
@@ -90,6 +95,8 @@ export function Sidebar({
   onAddExpPresetMaxLevel,
   onAddExpPresetRich,
   onAddExpPresetRichAndMaxLevel,
+  onSelectRankUp,
+  rankUpAccent,
   onSelectUploadConfig,
   sproutAccent,
   addSproutBusy = false,
@@ -101,6 +108,9 @@ export function Sidebar({
   uploadConfigBusy = false,
   onUploadConfigPick,
   onUploadConfigRestore,
+  taskMapCheckAccent,
+  taskMapCheckBusy = false,
+  onSelectTaskMapCheck,
   onCloseMenus,
   onOpenGallery,
   templateDropHoverId = null,
@@ -203,19 +213,24 @@ export function Sidebar({
     filterSheetOpen,
     addExpAccent,
     addExpPresetBusy,
+    rankUpAccent,
     sproutAccent,
     addSproutBusy,
     resetMatchAccent,
     clearMatchBusy,
     uploadConfigAccent,
     uploadConfigBusy,
+    taskMapCheckAccent,
+    taskMapCheckBusy,
     serverWideSendEnabled,
     templateDropHoverId,
     templateDropRejectId,
     onSelectItem,
     onSelectTask,
     onSelectAddExp,
+    onSelectRankUp,
     onSelectUploadConfig,
+    onSelectTaskMapCheck,
     onSelectTemplate,
     onAddExpPresetMaxLevel,
     onAddExpPresetRich,

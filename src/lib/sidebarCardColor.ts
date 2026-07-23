@@ -3,7 +3,9 @@ import type { AppConfig, SavedTemplate } from "../types.ts";
 export const DEFAULT_SIDEBAR_ITEM_CARD_COLOR = "#e5484d";
 export const DEFAULT_SIDEBAR_TASK_CARD_COLOR = "#5b8cff";
 export const DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR = "#e85d04";
+export const DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR = "#c9a227";
 export const DEFAULT_SIDEBAR_UPLOAD_CONFIG_CARD_COLOR = "#ffffff";
+export const DEFAULT_SIDEBAR_TASK_MAP_CHECK_CARD_COLOR = "#8b5cf6";
 export const DEFAULT_SIDEBAR_RESET_MATCH_CARD_COLOR = "#6b7280";
 export const DEFAULT_SIDEBAR_SPROUT_CARD_COLOR = "#22c55e";
 
@@ -19,8 +21,16 @@ export function sidebarAddExpDefaultColor(config: AppConfig): string {
   return normalizeSidebarCardColor(config.sidebarAddExpCardColor, DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR);
 }
 
+export function sidebarRankUpDefaultColor(config: AppConfig): string {
+  return normalizeSidebarCardColor(config.sidebarRankUpCardColor, DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR);
+}
+
 export function sidebarUploadConfigDefaultColor(): string {
   return DEFAULT_SIDEBAR_UPLOAD_CONFIG_CARD_COLOR;
+}
+
+export function sidebarTaskMapCheckDefaultColor(): string {
+  return DEFAULT_SIDEBAR_TASK_MAP_CHECK_CARD_COLOR;
 }
 
 export function normalizeSidebarCardColor(input: unknown, fallback: string): string {

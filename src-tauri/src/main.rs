@@ -213,6 +213,8 @@ struct AppConfig {
     sidebar_task_card_color: String,
     #[serde(default = "default_sidebar_add_exp_card_color")]
     sidebar_add_exp_card_color: String,
+    #[serde(default = "default_sidebar_rank_up_card_color")]
+    sidebar_rank_up_card_color: String,
     #[serde(default)]
     sidebar_item_card_color_override: Option<String>,
     #[serde(default)]
@@ -240,14 +242,28 @@ struct AppConfig {
     /// 旧版单一标记，读入后由前端合并到 `initialItem` / `initialTask`
     #[serde(default)]
     initial_filter_hint_shown: Option<bool>,
+    #[serde(default = "default_gmt_platform")]
+    gmt_platform: String,
+    #[serde(default)]
+    gmt_prelive_enabled: bool,
     #[serde(default = "default_gmt_base_url")]
     gmt_base_url: String,
     #[serde(default)]
     gmt_cookie: String,
     #[serde(default)]
+    gmt_cn_cookie: String,
+    #[serde(default)]
     gmt_env_id: Option<i64>,
     #[serde(default)]
     gmt_env_name: Option<String>,
+    #[serde(default)]
+    gmt_overseas_env_id: Option<i64>,
+    #[serde(default)]
+    gmt_overseas_env_name: Option<String>,
+    #[serde(default)]
+    gmt_cn_env_id: Option<i64>,
+    #[serde(default)]
+    gmt_cn_env_name: Option<String>,
     #[serde(default)]
     gmt_account_id: String,
     #[serde(default)]
@@ -270,6 +286,22 @@ struct AppConfig {
     gtop_region_server_id: Option<String>,
     #[serde(default)]
     gtop_region_server_name: Option<String>,
+    #[serde(default)]
+    gtop_overseas_env_id: Option<String>,
+    #[serde(default)]
+    gtop_overseas_env_name: Option<String>,
+    #[serde(default)]
+    gtop_overseas_region_server_id: Option<String>,
+    #[serde(default)]
+    gtop_overseas_region_server_name: Option<String>,
+    #[serde(default)]
+    gtop_cn_env_id: Option<String>,
+    #[serde(default)]
+    gtop_cn_env_name: Option<String>,
+    #[serde(default)]
+    gtop_cn_region_server_id: Option<String>,
+    #[serde(default)]
+    gtop_cn_region_server_name: Option<String>,
     #[serde(default)]
     item_server_wide_send_settings: Option<ItemServerWideSendSettings>,
     #[serde(default)]
@@ -296,6 +328,10 @@ fn default_gmt_base_url() -> String {
     "https://test-krad.stdgmtool.web.garena.cn".to_string()
 }
 
+fn default_gmt_platform() -> String {
+    "overseas".to_string()
+}
+
 fn default_gmt_region() -> String {
     "SG".to_string()
 }
@@ -310,6 +346,10 @@ fn default_sidebar_task_card_color() -> String {
 
 fn default_sidebar_add_exp_card_color() -> String {
     "#e85d04".to_string()
+}
+
+fn default_sidebar_rank_up_card_color() -> String {
+    "#c9a227".to_string()
 }
 
 impl Default for AppConfig {
@@ -331,6 +371,7 @@ impl Default for AppConfig {
             sidebar_item_card_color: default_sidebar_item_card_color(),
             sidebar_task_card_color: default_sidebar_task_card_color(),
             sidebar_add_exp_card_color: default_sidebar_add_exp_card_color(),
+            sidebar_rank_up_card_color: default_sidebar_rank_up_card_color(),
             sidebar_item_card_color_override: None,
             sidebar_task_card_color_override: None,
             sidebar_template_order: None,
@@ -344,10 +385,17 @@ impl Default for AppConfig {
             initial_item_filter_sheet_shown: false,
             initial_task_filter_sheet_shown: false,
             initial_filter_hint_shown: None,
+            gmt_platform: default_gmt_platform(),
+            gmt_prelive_enabled: false,
             gmt_base_url: default_gmt_base_url(),
             gmt_cookie: String::new(),
+            gmt_cn_cookie: String::new(),
             gmt_env_id: None,
             gmt_env_name: None,
+            gmt_overseas_env_id: None,
+            gmt_overseas_env_name: None,
+            gmt_cn_env_id: None,
+            gmt_cn_env_name: None,
             gmt_account_id: String::new(),
             gmt_tradable: false,
             gmt_lock_region: default_gmt_region(),
@@ -359,6 +407,14 @@ impl Default for AppConfig {
             gtop_env_name: None,
             gtop_region_server_id: None,
             gtop_region_server_name: None,
+            gtop_overseas_env_id: None,
+            gtop_overseas_env_name: None,
+            gtop_overseas_region_server_id: None,
+            gtop_overseas_region_server_name: None,
+            gtop_cn_env_id: None,
+            gtop_cn_env_name: None,
+            gtop_cn_region_server_id: None,
+            gtop_cn_region_server_name: None,
             item_server_wide_send_settings: Some(ItemServerWideSendSettings::default()),
             global_send_last_form: None,
             excel_auto_refresh_interval_sec: default_excel_auto_refresh_interval_sec(),

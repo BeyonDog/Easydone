@@ -5,9 +5,11 @@ import { resolveSidebarCardOrder, isSidebarCardHidden } from "./sidebarCardLayou
 export const SIDEBAR_PINNED_ITEM = "pinned:item";
 export const SIDEBAR_PINNED_TASK = "pinned:task";
 export const SIDEBAR_PINNED_ADD_EXP = "pinned:addExp";
+export const SIDEBAR_PINNED_RANK_UP = "pinned:rankUp";
 export const SIDEBAR_PINNED_ADD_SPROUT = "pinned:addSprout";
 export const SIDEBAR_PINNED_RESET_MATCH = "pinned:resetMatch";
 export const SIDEBAR_PINNED_UPLOAD_CONFIG = "pinned:uploadConfig";
+export const SIDEBAR_PINNED_TASK_MAP_CHECK = "pinned:taskMapCheck";
 
 export const SIDEBAR_PINNED_DEFS = [
   {
@@ -32,6 +34,13 @@ export const SIDEBAR_PINNED_DEFS = [
     pin: null,
   },
   {
+    id: SIDEBAR_PINNED_RANK_UP,
+    title: "升段位",
+    searchKeywords: ["段位", "rank", "升段", "段位分"],
+    hasMainPanel: true,
+    pin: null,
+  },
+  {
     id: SIDEBAR_PINNED_ADD_SPROUT,
     title: "加豆芽分",
     searchKeywords: ["豆芽", "sprout", "score"],
@@ -49,6 +58,13 @@ export const SIDEBAR_PINNED_DEFS = [
     id: SIDEBAR_PINNED_UPLOAD_CONFIG,
     title: "上传配置",
     searchKeywords: ["上传", "配置", "gtop", "csv"],
+    hasMainPanel: true,
+    pin: null,
+  },
+  {
+    id: SIDEBAR_PINNED_TASK_MAP_CHECK,
+    title: "地图检查",
+    searchKeywords: ["地图", "tag", "宝箱", "任务", "检查"],
     hasMainPanel: true,
     pin: null,
   },

@@ -3,6 +3,7 @@ import { formatGmtExecErrorMessage } from "./branchEnvDisplay.ts";
 import { gmtEnvSelectionBlockMessage } from "./gmtEnvSelection.ts";
 import { SPROUT_SCORE_ONE_CLICK_AMOUNT } from "./gmtApi.contract.ts";
 import { gmtExecAddSproutScore, gmtSessionSliceFromConfig } from "./gmtClient.ts";
+import { gmtRequestRegions } from "./gmtPlatform.ts";
 import type { LogGmtPartial, OperationOutcome } from "./operationLog.ts";
 
 export type AddSproutScoreDeps = {
@@ -54,11 +55,12 @@ export async function runAddSproutScore(deps: AddSproutScoreDeps): Promise<boole
 
   try {
     const slice = gmtSessionSliceFromConfig(deps.config);
+    const regions = gmtRequestRegions(deps.config);
     const result = await gmtExecAddSproutScore(slice, {
       envName: deps.config.gmtEnvName!.trim(),
       accountId,
-      lockRegion: deps.config.gmtLockRegion?.trim() || "SG",
-      notiRegion: deps.config.gmtNotiRegion?.trim() || "SG",
+      lockRegion: regions.lockRegion,
+      notiRegion: regions.notiRegion,
       sproutScore: SPROUT_SCORE_ONE_CLICK_AMOUNT,
     });
     const msg = result.ok

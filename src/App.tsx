@@ -1,10 +1,12 @@
 import React, { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { AddExpPanel } from "./AddExpPanel";
+import { RankUpPanel } from "./RankUpPanel";
 import { UploadConfigPanel } from "./UploadConfigPanel.tsx";
+import { TaskMapCheckPanel } from "./TaskMapCheckPanel.tsx";
 import { useClampedMenuPosition } from "./hooks/useClampedMenuPosition.ts";
 import { useTableAxisScroll } from "./hooks/useTableAxisScroll.ts";
 import { useTableRowToTemplateDrag } from "./hooks/useTableRowToTemplateDrag.tsx";
@@ -25,7 +27,7 @@ import type {
   TaskTableFilter,
 } from "./types";
 import type { GlobalSendSubmitPayload } from "./GlobalSendMailModal.tsx";
-import { excelAccountPath, excelItemPath, excelMissionPath } from "./lib/paths";
+import { excelAccountPath, excelItemPath, excelMissionPath, excelRankPath, rankCsvCandidatePaths, rankingSeasonInfoCsvCandidatePaths } from "./lib/paths";
 import {
   DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
   fingerprintsEqual,
@@ -141,6 +143,8 @@ import {
   gmtOpenLoginWindow,
   gmtSessionProbe,
   gmtSessionSliceFromConfig,
+  isPreliveGmtEnabled,
+  PRELIVE_GMT_ENV,
   type GmtEnvEntry,
 } from "./lib/gmtClient";
 import { evaluateGmtItemSendReadiness } from "./lib/gmtSendReadiness";
@@ -182,6 +186,7 @@ import {
   columnValueFiltersActive,
 } from "./lib/columnValueFilter.ts";
 import { migrateConfigTemplates } from "./lib/templateMigrate";
+import { dedupeAllSavedTemplates, partitionRowsForTemplateAppend } from "./lib/templateAppend.ts";
 import { headersCompatibleForAppend, syncSavedTemplatesToMasterSheets } from "./lib/templateHeaderSync.ts";
 import { runClearTimeoutMatchInfo, type ClearTimeoutMatchInfoDeps } from "./lib/clearTimeoutMatchInfo.ts";
 import { runAddSproutScore, type AddSproutScoreDeps } from "./lib/addSproutScore.ts";
@@ -200,12 +205,29 @@ import {
 import {
   DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR,
   DEFAULT_SIDEBAR_ITEM_CARD_COLOR,
+  DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR,
   DEFAULT_SIDEBAR_TASK_CARD_COLOR,
   sidebarAddExpDefaultColor,
+  sidebarRankUpDefaultColor,
   sidebarResetMatchDefaultColor,
   sidebarSproutDefaultColor,
   sidebarUploadConfigDefaultColor,
+  sidebarTaskMapCheckDefaultColor,
 } from "./lib/sidebarCardColor.ts";
+import {
+  buildRankLadderFromRows,
+  buildS6FallbackLadder,
+  parseCsvToMatrix,
+  parseRankSheet,
+  parseRankingSeasonInfoCsv,
+  type RankLadder,
+} from "./lib/rankLadder.ts";
+import { loadTagCheckReportFromWorkspace } from "./lib/taskMapTagCheck/loadTagCheckReport.ts";
+import {
+  exportIssuesToSpreadsheetXml,
+  spreadsheetXmlWithBom,
+} from "./lib/taskMapTagCheck/exportIssuesSpreadsheet.ts";
+import type { TagCheckReport } from "./lib/taskMapTagCheck/index.ts";
 import {
   clearModifiedConfigCsv,
   clearModifiedConfigCsvBatch,
@@ -245,10 +267,25 @@ import {
   DEFAULT_GTOP_PROJECT,
   gtopCloseLoginWindow,
   gtopCollectLoginCookies,
+  gtopFetchEnvs,
+  gtopFetchRegionServers,
   gtopOpenLoginWindow,
   gtopSessionProbe,
   gtopSessionSliceFromConfig,
 } from "./lib/gtopClient";
+import {
+  findGtopEnvByName,
+  GTOP_CN_ENV_NAME,
+  resolveGtopBranchServerOptions,
+} from "./lib/gtopBranchServers.ts";
+import {
+  CN_GMT_ENV_OPTIONS,
+  gmtRequestRegions,
+  selectCnServer,
+  setGmtPreliveEnabled,
+  switchGmtPlatform,
+  type GmtPlatform,
+} from "./lib/gmtPlatform.ts";
 import { SettingsModal } from "./SettingsModal.tsx";
 import {
   runAddExpPresetMaxLevel,
@@ -259,8 +296,7 @@ import {
 
 const MAX_TEMPLATES = 50;
 
-const GMT_COMMAND_LIST_URL =
-  "https://test-krad.stdgmtool.web.garena.cn/command/list?page=1&size=20";
+const GMT_COMMAND_LIST_PATH = "/command/list?page=1&size=20";
 
 /** 不可隐藏的 Excel 表头（列隐藏面板中禁用） */
 const NON_HIDEABLE_ITEM_HEADERS = new Set(["物品ID"]);
@@ -349,7 +385,7 @@ function migrateTaskTypeStoredKey(k: string): string {
 
 /** 当前表格勾选行所属业务类型（与快照 source 对齐） */
 function getCurrentTableSource(activeView: ActiveView, config: AppConfig): "item" | "task" | null {
-  if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return null;
+  if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return null;
   if (activeView.kind === "item") return "item";
   if (activeView.kind === "task") return "task";
   if (activeView.kind === "template" || activeView.kind === "snapshot") {
@@ -961,6 +997,7 @@ const defaultConfig = (): AppConfig => ({
   sidebarItemCardColor: DEFAULT_SIDEBAR_ITEM_CARD_COLOR,
   sidebarTaskCardColor: DEFAULT_SIDEBAR_TASK_CARD_COLOR,
   sidebarAddExpCardColor: DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR,
+  sidebarRankUpCardColor: DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR,
   sidebarItemCardColorOverride: null,
   sidebarTaskCardColorOverride: null,
   sidebarTemplateOrder: null,
@@ -969,10 +1006,17 @@ const defaultConfig = (): AppConfig => ({
   sidebarGallerySplitPx: null,
   initialItemFilterSheetShown: false,
   initialTaskFilterSheetShown: false,
+  gmtPlatform: "overseas",
+  gmtPreliveEnabled: false,
   gmtBaseUrl: DEFAULT_GMT_BASE_URL,
   gmtCookie: "",
+  gmtCnCookie: "",
   gmtEnvId: null,
   gmtEnvName: null,
+  gmtOverseasEnvId: null,
+  gmtOverseasEnvName: null,
+  gmtCnEnvId: null,
+  gmtCnEnvName: null,
   gmtAccountId: "",
   gmtTradable: false,
   gmtLockRegion: "SG",
@@ -984,6 +1028,14 @@ const defaultConfig = (): AppConfig => ({
   gtopEnvName: null,
   gtopRegionServerId: null,
   gtopRegionServerName: null,
+  gtopOverseasEnvId: null,
+  gtopOverseasEnvName: null,
+  gtopOverseasRegionServerId: null,
+  gtopOverseasRegionServerName: null,
+  gtopCnEnvId: null,
+  gtopCnEnvName: null,
+  gtopCnRegionServerId: null,
+  gtopCnRegionServerName: null,
   excelAutoRefreshIntervalSec: DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
   showItemTypeInTable: false,
 });
@@ -1015,6 +1067,17 @@ export default function App() {
   const appUpdater = useAppUpdater({ checkOnMount: true });
   const [logPanelOpen, setLogPanelOpen] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
+  const configRef = useRef<AppConfig | null>(null);
+  const lastSavedConfigRef = useRef<AppConfig | null>(null);
+  const renderedConfigRef = useRef<AppConfig | null>(config);
+  if (renderedConfigRef.current !== config) {
+    renderedConfigRef.current = config;
+    configRef.current = config;
+  }
+  const gmtSessionRequestIdRef = useRef(0);
+  const gtopSessionRequestIdRef = useRef(0);
+  const cnGtopRequestIdRef = useRef(0);
+  const activeGmtPlatformRef = useRef<GmtPlatform>("overseas");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [itemAoa, setItemAoa] = useState<SheetMatrix | null>(null);
@@ -1024,6 +1087,8 @@ export default function App() {
   const [taskAoa, setTaskAoa] = useState<SheetMatrix | null>(null);
   const [accountLevelByLevel, setAccountLevelByLevel] = useState<Map<number, number> | null>(null);
   const [accountLevelParseError, setAccountLevelParseError] = useState<string | null>(null);
+  const [rankLadder, setRankLadder] = useState<RankLadder | null>(null);
+  const [rankLadderLoadError, setRankLadderLoadError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<ActiveView>({ kind: "item" });
   const [remarkColIndex, setRemarkColIndex] = useState<number>(-1);
@@ -1053,6 +1118,9 @@ export default function App() {
   const [clearMatchBusy, setClearMatchBusy] = useState(false);
   const [addSproutBusy, setAddSproutBusy] = useState(false);
   const [uploadConfigBusy, setUploadConfigBusy] = useState(false);
+  const [taskMapCheckBusy, setTaskMapCheckBusy] = useState(false);
+  const [tagCheckReport, setTagCheckReport] = useState<TagCheckReport | null>(null);
+  const [tagCheckError, setTagCheckError] = useState<string | null>(null);
   const [sidebarGalleryOpen, setSidebarGalleryOpen] = useState(false);
   const [sidebarGalleryMainOpen, setSidebarGalleryMainOpen] = useState(false);
   const [gallerySplitWidthPx, setGallerySplitWidthPx] = useState(520);
@@ -1151,17 +1219,36 @@ export default function App() {
   const excelLoadSeqRef = useRef(0);
   const excelLoadInFlightRef = useRef(0);
 
+  const persistQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const latestPersistConfigRef = useRef<AppConfig | null>(null);
   const persist = useCallback(async (next: AppConfig) => {
-    await invoke("save_config", { config: next });
-    setConfig(next);
+    configRef.current = next;
+    latestPersistConfigRef.current = next;
+    const save = persistQueueRef.current
+      .catch(() => undefined)
+      .then(() => invoke<void>("save_config", { config: next }));
+    persistQueueRef.current = save;
+    try {
+      await save;
+    } catch (error) {
+      if (configRef.current === next) {
+        configRef.current = lastSavedConfigRef.current;
+      }
+      if (latestPersistConfigRef.current === next) {
+        latestPersistConfigRef.current = lastSavedConfigRef.current;
+      }
+      throw error;
+    }
+    lastSavedConfigRef.current = next;
+    if (latestPersistConfigRef.current === next && configRef.current === next) {
+      setConfig(next);
+    }
   }, []);
 
   const persistRef = useRef(persist);
   useEffect(() => {
     persistRef.current = persist;
   }, [persist]);
-
-  const configRef = useRef<AppConfig | null>(null);
 
   const scheduleGallerySplitPersist = useCallback((widthPx: number) => {
     if (gallerySplitPersistTimerRef.current) {
@@ -1202,7 +1289,7 @@ export default function App() {
 
   const gmtAccountIdDraftRef = useRef("");
   useEffect(() => {
-    configRef.current = config;
+    if (config) activeGmtPlatformRef.current = config.gmtPlatform;
   }, [config]);
   useEffect(() => {
     gmtAccountIdDraftRef.current = gmtAccountIdDraft;
@@ -1217,7 +1304,9 @@ export default function App() {
   const flushSessionSettingsToDisk = useCallback(() => {
     const next = buildPersistedConfigFromUi();
     if (!next) return;
-    void invoke("save_config", { config: next });
+    void invoke("save_config", { config: next }).then(() => {
+      lastSavedConfigRef.current = next;
+    });
   }, [buildPersistedConfigFromUi]);
 
   const flushSessionRef = useRef(flushSessionSettingsToDisk);
@@ -1228,10 +1317,14 @@ export default function App() {
 
   const saveItemTableFilterToDisk = useCallback(async (filter: ItemTableFilter | null) => {
     await invoke("save_item_table_filter", { filter });
+    const base = lastSavedConfigRef.current ?? configRef.current;
+    if (base) lastSavedConfigRef.current = { ...base, itemTableFilter: filter };
   }, []);
 
   const saveTaskTableFilterToDisk = useCallback(async (filter: TaskTableFilter | null) => {
     await invoke("save_task_table_filter", { filter });
+    const base = lastSavedConfigRef.current ?? configRef.current;
+    if (base) lastSavedConfigRef.current = { ...base, taskTableFilter: filter };
   }, []);
 
   const loadConfigFromDisk = useCallback(async () => {
@@ -1251,8 +1344,14 @@ export default function App() {
         : [],
       sendTemplates: Array.isArray((c as AppConfig).sendTemplates) ? (c as AppConfig).sendTemplates : [],
     });
-    setConfig({
-      ...merged,
+    const deduped = dedupeAllSavedTemplates(merged.savedTemplates, merged.itemRemarkColumn);
+    const mergedConfig =
+      deduped.changedIds.length > 0 ? { ...merged, savedTemplates: deduped.templates } : merged;
+    const rawPlatform = (c as Partial<AppConfig>).gmtPlatform === "cn" ? "cn" : "overseas";
+    const preliveOn =
+      rawPlatform !== "cn" && Boolean((c as Partial<AppConfig>).gmtPreliveEnabled);
+    const loadedConfig: AppConfig = {
+      ...mergedConfig,
       themeAccentHex: normalizeThemeAccentHex((c as AppConfig).themeAccentHex),
       themeBackgroundHex: normalizeThemeBackgroundHex((c as AppConfig).themeBackgroundHex),
       themeWallpaperRelativePath: normalizeThemeWallpaperRelativePath((c as AppConfig).themeWallpaperRelativePath),
@@ -1263,10 +1362,25 @@ export default function App() {
       initialTaskFilterSheetShown:
         Boolean((c as AppConfig & { initialFilterHintShown?: boolean }).initialFilterHintShown) ||
         Boolean((c as AppConfig).initialTaskFilterSheetShown),
+      gmtPlatform: rawPlatform,
+      gmtPreliveEnabled: preliveOn,
       gmtBaseUrl: (c as AppConfig).gmtBaseUrl?.trim() || DEFAULT_GMT_BASE_URL,
       gmtCookie: (c as AppConfig).gmtCookie ?? "",
-      gmtEnvId: (c as AppConfig).gmtEnvId ?? null,
-      gmtEnvName: (c as AppConfig).gmtEnvName ?? null,
+      gmtCnCookie: (c as Partial<AppConfig>).gmtCnCookie ?? "",
+      gmtEnvId: preliveOn ? PRELIVE_GMT_ENV.id : (c as AppConfig).gmtEnvId ?? null,
+      gmtEnvName: preliveOn ? PRELIVE_GMT_ENV.name : (c as AppConfig).gmtEnvName ?? null,
+      gmtOverseasEnvId:
+        (c as Partial<AppConfig>).gmtOverseasEnvId ??
+        (rawPlatform === "overseas" && !preliveOn ? (c as AppConfig).gmtEnvId ?? null : null),
+      gmtOverseasEnvName:
+        (c as Partial<AppConfig>).gmtOverseasEnvName ??
+        (rawPlatform === "overseas" && !preliveOn ? (c as AppConfig).gmtEnvName ?? null : null),
+      gmtCnEnvId:
+        (c as Partial<AppConfig>).gmtCnEnvId ??
+        (rawPlatform === "cn" ? (c as AppConfig).gmtEnvId ?? null : null),
+      gmtCnEnvName:
+        (c as Partial<AppConfig>).gmtCnEnvName ??
+        (rawPlatform === "cn" ? (c as AppConfig).gmtEnvName ?? null : null),
       gmtAccountId: (c as AppConfig).gmtAccountId ?? "",
       gmtTradable: Boolean((c as AppConfig).gmtTradable),
       gmtLockRegion: (c as AppConfig).gmtLockRegion?.trim() || "SG",
@@ -1274,17 +1388,44 @@ export default function App() {
       gtopBaseUrl: (c as AppConfig).gtopBaseUrl?.trim() || DEFAULT_GTOP_BASE_URL,
       gtopCookie: (c as AppConfig).gtopCookie ?? "",
       gtopProject: (c as AppConfig).gtopProject?.trim() || DEFAULT_GTOP_PROJECT,
-      gtopEnvId: (c as AppConfig).gtopEnvId ?? null,
+      gtopEnvId: rawPlatform === "cn" ? null : (c as AppConfig).gtopEnvId ?? null,
       gtopEnvName: (c as AppConfig).gtopEnvName ?? null,
-      gtopRegionServerId: (c as AppConfig).gtopRegionServerId ?? null,
+      gtopRegionServerId:
+        rawPlatform === "cn" ? null : (c as AppConfig).gtopRegionServerId ?? null,
       gtopRegionServerName: (c as AppConfig).gtopRegionServerName ?? null,
+      gtopOverseasEnvId:
+        (c as Partial<AppConfig>).gtopOverseasEnvId ??
+        (rawPlatform === "overseas" ? (c as AppConfig).gtopEnvId ?? null : null),
+      gtopOverseasEnvName:
+        (c as Partial<AppConfig>).gtopOverseasEnvName ??
+        (rawPlatform === "overseas" ? (c as AppConfig).gtopEnvName ?? null : null),
+      gtopOverseasRegionServerId:
+        (c as Partial<AppConfig>).gtopOverseasRegionServerId ??
+        (rawPlatform === "overseas" ? (c as AppConfig).gtopRegionServerId ?? null : null),
+      gtopOverseasRegionServerName:
+        (c as Partial<AppConfig>).gtopOverseasRegionServerName ??
+        (rawPlatform === "overseas" ? (c as AppConfig).gtopRegionServerName ?? null : null),
+      gtopCnEnvId: null,
+      gtopCnEnvName:
+        (c as Partial<AppConfig>).gtopCnEnvName ??
+        (rawPlatform === "cn" ? (c as AppConfig).gtopEnvName ?? null : null),
+      gtopCnRegionServerId: null,
+      gtopCnRegionServerName:
+        (c as Partial<AppConfig>).gtopCnRegionServerName ??
+        (rawPlatform === "cn" ? (c as AppConfig).gtopRegionServerName ?? null : null),
       itemServerWideSendSettings: normalizeItemServerWideSendSettings((c as AppConfig).itemServerWideSendSettings),
       globalSendLastForm: normalizeGlobalSendLastForm((c as AppConfig).globalSendLastForm),
       excelAutoRefreshIntervalSec: normalizeExcelAutoRefreshIntervalSec(
         (c as AppConfig).excelAutoRefreshIntervalSec,
       ),
       showItemTypeInTable: Boolean((c as AppConfig).showItemTypeInTable),
-    });
+    };
+    configRef.current = loadedConfig;
+    lastSavedConfigRef.current = loadedConfig;
+    setConfig(loadedConfig);
+    if (deduped.changedIds.length > 0) {
+      await invoke("save_config", { config: loadedConfig });
+    }
     const needWizard = !c.excelWorkspaceRoot.trim();
     setWizardOpen(needWizard);
   }, []);
@@ -1301,6 +1442,8 @@ export default function App() {
           setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
           setAccountLevelByLevel(null);
           setAccountLevelParseError(null);
+          setRankLadder(null);
+          setRankLadderLoadError(null);
         }
         return false;
       }
@@ -1333,6 +1476,8 @@ export default function App() {
         setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
         setAccountLevelByLevel(null);
         setAccountLevelParseError(null);
+        setRankLadder(null);
+        setRankLadderLoadError(null);
       }
 
       const applyLatest = (fn: () => void) => {
@@ -1394,6 +1539,84 @@ export default function App() {
             setAccountLevelParseError(accE instanceof Error ? accE.message : String(accE));
           });
         }
+
+        try {
+          let seasonLabel: string | undefined;
+          let seasonStartIso: string | null = "2026-07-02";
+          let initialScore = 1;
+          for (const seasonPath of rankingSeasonInfoCsvCandidatePaths(root)) {
+            try {
+              const seasonText = await invoke<string>("read_text_file", { path: seasonPath });
+              const season = parseRankingSeasonInfoCsv(seasonText);
+              seasonLabel = season.seasonLabel ?? undefined;
+              seasonStartIso = season.seasonStartIso ?? seasonStartIso;
+              initialScore = season.initialScore;
+              break;
+            } catch {
+              /* try next candidate */
+            }
+          }
+
+          let loaded: RankLadder | null = null;
+          let loadErr: string | null = null;
+          try {
+            const rb64 = await invoke<string>("read_file_base64", { path: excelRankPath(root) });
+            const rankAoa =
+              readOptionalSheetFromWorkbook(rb64, "Rank") ??
+              readOptionalSheetFromWorkbook(rb64, "rank");
+            if (rankAoa) {
+              const parsed = parseRankSheet(rankAoa, { seasonStartIso });
+              if (parsed.ok) {
+                loaded = buildRankLadderFromRows(parsed.rows, "excel", { seasonLabel, initialScore });
+              } else {
+                loadErr = parsed.error;
+              }
+            } else {
+              loadErr = "Rank.xlsx 中未找到 Rank 表";
+            }
+          } catch (excelRankErr) {
+            loadErr = excelRankErr instanceof Error ? excelRankErr.message : String(excelRankErr);
+          }
+
+          if (!loaded) {
+            for (const csvPath of rankCsvCandidatePaths(root)) {
+              try {
+                const csvText = await invoke<string>("read_text_file", { path: csvPath });
+                const parsed = parseRankSheet(parseCsvToMatrix(csvText), { seasonStartIso });
+                if (parsed.ok) {
+                  loaded = buildRankLadderFromRows(parsed.rows, "csv", { seasonLabel, initialScore });
+                  loadErr = null;
+                  break;
+                }
+                loadErr = parsed.error;
+              } catch {
+                /* try next */
+              }
+            }
+          }
+
+          applyLatest(() => {
+            if (loaded) {
+              setRankLadder(loaded);
+              setRankLadderLoadError(null);
+            } else {
+              setRankLadder(buildS6FallbackLadder());
+              setRankLadderLoadError(
+                loadErr
+                  ? `${loadErr}；已使用 S6 内置段位门槛`
+                  : "未找到 Rank 表；已使用 S6 内置段位门槛",
+              );
+            }
+          });
+        } catch (rankE) {
+          applyLatest(() => {
+            setRankLadder(buildS6FallbackLadder());
+            setRankLadderLoadError(
+              `段位表加载失败: ${rankE instanceof Error ? rankE.message : String(rankE)}；已使用 S6 内置门槛`,
+            );
+          });
+        }
+
         if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
           const sync = syncSavedTemplatesToMasterSheets({
             templates: c.savedTemplates,
@@ -1486,50 +1709,188 @@ export default function App() {
 
   const refreshGmtSession = useCallback(
     async (cfg: AppConfig) => {
+      const requestId = ++gmtSessionRequestIdRef.current;
+      const isCurrent = () =>
+        requestId === gmtSessionRequestIdRef.current &&
+        activeGmtPlatformRef.current === cfg.gmtPlatform;
       setGmtSessionChecking(true);
       try {
         const slice = gmtSessionSliceFromConfig(cfg);
         const r = await gmtSessionProbe(slice);
+        if (!isCurrent()) return;
         setGmtLoggedIn(r.loggedIn);
         if (r.loggedIn) {
           onGmtSessionVerifiedLoggedIn();
-          const envs = sortBranchEnvEntries(await gmtFetchEnvs(slice));
+          const envs =
+            cfg.gmtPlatform === "cn"
+              ? CN_GMT_ENV_OPTIONS
+              : isPreliveGmtEnabled(cfg)
+                ? [PRELIVE_GMT_ENV]
+                : sortBranchEnvEntries(await gmtFetchEnvs(slice));
+          if (!isCurrent()) return;
           setGmtEnvs(envs);
           const heal = healGmtEnvConfig(
             { gmtEnvId: cfg.gmtEnvId, gmtEnvName: cfg.gmtEnvName },
             envs,
           );
           if (heal.kind === "persist") {
-            void persist({ ...cfg, ...heal.next });
+            const current = configRef.current;
+            if (!current || current.gmtPlatform !== cfg.gmtPlatform) return;
+            void persist({
+              ...current,
+              ...heal.next,
+              ...(cfg.gmtPlatform === "cn"
+                ? {
+                    gmtCnEnvId: heal.next.gmtEnvId,
+                    gmtCnEnvName: heal.next.gmtEnvName,
+                  }
+                : {
+                    gmtOverseasEnvId: heal.next.gmtEnvId,
+                    gmtOverseasEnvName: heal.next.gmtEnvName,
+                  }),
+            });
             if (heal.toast) push(heal.toast);
           }
         } else {
           setGmtEnvs([]);
         }
       } catch (e) {
+        if (!isCurrent()) return;
         setGmtLoggedIn(false);
         setGmtEnvs([]);
         push(`GMT 登录检查失败: ${e}`);
       } finally {
-        setGmtSessionChecking(false);
+        if (isCurrent()) setGmtSessionChecking(false);
       }
     },
     [push, onGmtSessionVerifiedLoggedIn, persist],
   );
 
   const refreshGtopSession = useCallback(async (cfg: AppConfig) => {
+    const requestId = ++gtopSessionRequestIdRef.current;
     const slice = gtopSessionSliceFromConfig(cfg);
+    const isCurrent = () => {
+      const current = configRef.current ?? latestPersistConfigRef.current;
+      if (!current || requestId !== gtopSessionRequestIdRef.current) return false;
+      const currentSlice = gtopSessionSliceFromConfig(current);
+      return (
+        currentSlice.gtopBaseUrl === slice.gtopBaseUrl &&
+        currentSlice.gtopCookie === slice.gtopCookie &&
+        currentSlice.gtopProject === slice.gtopProject
+      );
+    };
     if (!slice.gtopCookie.trim()) {
       setGtopLoggedIn(false);
       return;
     }
     try {
       const r = await gtopSessionProbe(slice);
-      setGtopLoggedIn(r.loggedIn);
+      if (isCurrent()) setGtopLoggedIn(r.loggedIn);
     } catch {
-      setGtopLoggedIn(false);
+      if (isCurrent()) setGtopLoggedIn(false);
     }
   }, []);
+
+  const resolveCnGtopTarget = useCallback(
+    async (cfg: AppConfig): Promise<AppConfig> => {
+      if (
+        cfg.gmtPlatform !== "cn" ||
+        activeGmtPlatformRef.current !== "cn" ||
+        !cfg.gtopRegionServerName?.startsWith("CN-")
+      ) {
+        return cfg;
+      }
+      const targetServerName = cfg.gtopRegionServerName;
+      const requestId = ++cnGtopRequestIdRef.current;
+      const latestConfig = () =>
+        configRef.current ?? latestPersistConfigRef.current ?? cfg;
+      const isCurrent = () =>
+        requestId === cnGtopRequestIdRef.current &&
+        activeGmtPlatformRef.current === "cn" &&
+        latestConfig().gmtPlatform === "cn" &&
+        latestConfig().gtopRegionServerName === targetServerName;
+      const unresolved: AppConfig = {
+        ...latestConfig(),
+        gtopEnvId: null,
+        gtopEnvName: GTOP_CN_ENV_NAME,
+        gtopRegionServerId: null,
+        gtopRegionServerName: targetServerName,
+        gtopCnEnvId: null,
+        gtopCnEnvName: GTOP_CN_ENV_NAME,
+        gtopCnRegionServerId: null,
+        gtopCnRegionServerName: targetServerName,
+      };
+      try {
+        await persist(unresolved);
+        if (!isCurrent()) return configRef.current ?? unresolved;
+        if (!cfg.gtopCookie.trim()) return unresolved;
+        const slice = gtopSessionSliceFromConfig(cfg);
+        const env = findGtopEnvByName(await gtopFetchEnvs(slice), GTOP_CN_ENV_NAME);
+        if (!isCurrent()) return configRef.current ?? unresolved;
+        if (!env) {
+          push(`GTOP 未找到国服环境：${GTOP_CN_ENV_NAME}`);
+          return unresolved;
+        }
+        const options = resolveGtopBranchServerOptions(
+          await gtopFetchRegionServers(slice, env.id),
+          "cn",
+        );
+        if (!isCurrent()) return configRef.current ?? unresolved;
+        const server = options.find((item) => item.name === unresolved.gtopRegionServerName);
+        if (!server?.id) {
+          push(`GTOP 未找到国服区服：${unresolved.gtopRegionServerName}`);
+          const envResolved: AppConfig = {
+            ...latestConfig(),
+            gtopEnvId: env.id,
+            gtopEnvName: env.name,
+            gtopRegionServerId: null,
+            gtopCnEnvId: env.id,
+            gtopCnEnvName: env.name,
+            gtopCnRegionServerId: null,
+          };
+          await persist(envResolved);
+          if (!isCurrent()) return configRef.current ?? envResolved;
+          return envResolved;
+        }
+        const next: AppConfig = {
+          ...latestConfig(),
+          gtopEnvId: env.id,
+          gtopEnvName: env.name,
+          gtopRegionServerId: server.id,
+          gtopRegionServerName: server.name,
+          gtopCnEnvId: env.id,
+          gtopCnEnvName: env.name,
+          gtopCnRegionServerId: server.id,
+          gtopCnRegionServerName: server.name,
+        };
+        await persist(next);
+        if (!isCurrent()) return configRef.current ?? next;
+        return next;
+      } catch (e) {
+        if (isCurrent()) push(`GTOP 国服区服关联失败: ${e}`);
+        return unresolved;
+      }
+    },
+    [persist, push],
+  );
+
+  useEffect(() => {
+    if (
+      !config ||
+      config.gmtPlatform !== "cn" ||
+      !gtopLoggedIn ||
+      !config.gtopRegionServerName?.startsWith("CN-")
+    ) {
+      return;
+    }
+    void resolveCnGtopTarget(config);
+  }, [
+    config?.gmtPlatform,
+    config?.gtopCookie,
+    config?.gtopRegionServerName,
+    gtopLoggedIn,
+    resolveCnGtopTarget,
+  ]);
 
   const completeGtopLogin = useCallback(async () => {
     if (!config) return;
@@ -1563,7 +1924,7 @@ export default function App() {
   }, [config?.gtopCookie, config?.gtopBaseUrl, config?.gtopProject, refreshGtopSession, config]);
 
   const gmtSessionKey = config
-    ? `${config.gmtBaseUrl}\0${config.gmtCookie}\0${config.gmtEnvId ?? ""}`
+    ? `${config.gmtPlatform}\0${gmtSessionSliceFromConfig(config).gmtBaseUrl}\0${gmtSessionSliceFromConfig(config).gmtCookie}\0${config.gmtEnvId ?? ""}`
     : "";
 
   useEffect(() => {
@@ -1574,7 +1935,7 @@ export default function App() {
 
   const ensureGmtLoggedIn = useCallback(async (): Promise<boolean> => {
     if (!config) return false;
-    if (gmtLoggedIn && config.gmtCookie.trim()) {
+    if (gmtLoggedIn && gmtSessionSliceFromConfig(config).gmtCookie.trim()) {
       onGmtSessionVerifiedLoggedIn();
       return true;
     }
@@ -1591,11 +1952,14 @@ export default function App() {
     if (!config) return;
     try {
       const cookie = await gmtCollectLoginCookies();
-      const next = { ...config, gmtCookie: cookie };
+      const next =
+        config.gmtPlatform === "cn"
+          ? { ...config, gmtCnCookie: cookie }
+          : { ...config, gmtCookie: cookie };
       await persist(next);
       onGmtSessionVerifiedLoggedIn();
       await refreshGmtSession(next);
-      push("GMT 已退出");
+      push(`GMT ${config.gmtPlatform === "cn" ? "国服" : "海外"}已登录`);
     } catch (e) {
       push(`GMT 登录失败: ${e}`);
     }
@@ -1603,18 +1967,87 @@ export default function App() {
 
   const openGmtLoginWindow = useCallback(async () => {
     if (!config) return;
-    if (gmtLoggedIn && config.gmtCookie.trim()) {
+    const slice = gmtSessionSliceFromConfig(config);
+    if (gmtLoggedIn && slice.gmtCookie.trim()) {
       onGmtSessionVerifiedLoggedIn();
-      push("GMT 已退出");
+      push(`GMT ${config.gmtPlatform === "cn" ? "国服" : "海外"}已登录`);
       return;
     }
     try {
-      await gmtOpenLoginWindow(config.gmtBaseUrl);
+      await gmtOpenLoginWindow(slice.gmtBaseUrl);
       setGmtLoginModalOpen(true);
     } catch (e) {
       push(`打开 GMT 登录窗失败: ${e}`);
     }
   }, [config, gmtLoggedIn, push, onGmtSessionVerifiedLoggedIn]);
+
+  const changeGmtPlatform = useCallback(
+    async (target: GmtPlatform) => {
+      if (!config || config.gmtPlatform === target) return;
+      gmtSessionRequestIdRef.current += 1;
+      cnGtopRequestIdRef.current += 1;
+      activeGmtPlatformRef.current = target;
+      const next = switchGmtPlatform(config, target);
+      setGmtLoggedIn(false);
+      setGmtEnvs(target === "cn" ? CN_GMT_ENV_OPTIONS : []);
+      setGmtLoginModalOpen(false);
+      gmtBrowserOpenedThisSessionRef.current = false;
+      try {
+        await gmtCloseLoginWindow();
+        await persist(next);
+        await refreshGmtSession(next);
+      } catch (e) {
+        activeGmtPlatformRef.current = config.gmtPlatform;
+        push(`平台切换失败: ${e}`);
+        await refreshGmtSession(config);
+      }
+    },
+    [config, persist, push, refreshGmtSession],
+  );
+
+  const changeGmtPrelive = useCallback(
+    async (enabled: boolean) => {
+      if (!config || config.gmtPlatform === "cn") return;
+      if (Boolean(config.gmtPreliveEnabled) === enabled) return;
+      gmtSessionRequestIdRef.current += 1;
+      const next = setGmtPreliveEnabled(config, enabled);
+      setGmtLoggedIn(false);
+      setGmtEnvs(enabled ? [PRELIVE_GMT_ENV] : []);
+      setGmtLoginModalOpen(false);
+      gmtBrowserOpenedThisSessionRef.current = false;
+      try {
+        await gmtCloseLoginWindow();
+        await persist(next);
+        await refreshGmtSession(next);
+      } catch (e) {
+        push(`PR 切换失败: ${e}`);
+        await refreshGmtSession(config);
+      }
+    },
+    [config, persist, push, refreshGmtSession],
+  );
+
+  const selectTopbarGmtEnv = useCallback(
+    async (envId: number) => {
+      if (!config) return;
+      if (isPreliveGmtEnabled(config)) return;
+      const env = gmtEnvs.find((item) => item.id === envId);
+      if (!env) return;
+      if (config.gmtPlatform === "cn") {
+        const paired = selectCnServer(config, env.name);
+        await persist(paired);
+        return;
+      }
+      await persist({
+        ...config,
+        gmtEnvId: env.id,
+        gmtEnvName: env.name,
+        gmtOverseasEnvId: env.id,
+        gmtOverseasEnvName: env.name,
+      });
+    },
+    [config, gmtEnvs, persist],
+  );
 
   const commitGmtAccountIdDraft = useCallback(() => {
     if (!config) return;
@@ -1710,7 +2143,7 @@ export default function App() {
   }, [activeView, itemAoa, taskAoa, config]);
 
   const isItemTableView = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return false;
+    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return false;
     if (activeView.kind === "item") return true;
     if (activeView.kind === "task") return false;
     if (!config) return false;
@@ -1718,7 +2151,7 @@ export default function App() {
   }, [activeView, config]);
 
   const isTaskTableView = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return false;
+    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return false;
     if (activeView.kind === "task") return true;
     if (activeView.kind === "item") return false;
     if (!config) return false;
@@ -1785,7 +2218,7 @@ export default function App() {
   ]);
 
   const hiddenSet = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "uploadConfig") return new Set<string>();
+    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return new Set<string>();
     if (activeView.kind === "template" || activeView.kind === "snapshot") return new Set<string>();
     const arr = activeView.kind === "item" ? config?.hiddenItemColumns ?? [] : config?.hiddenTaskColumns ?? [];
     const blocked = activeView.kind === "item" ? NON_HIDEABLE_ITEM_HEADERS : NON_HIDEABLE_TASK_HEADERS;
@@ -2116,7 +2549,9 @@ export default function App() {
   const canColumnFilter =
     Boolean(currentAoa && currentAoa.length > 1) &&
     activeView.kind !== "addExp" &&
+    activeView.kind !== "rankUp" &&
     activeView.kind !== "uploadConfig" &&
+    activeView.kind !== "taskMapCheck" &&
     (isItemTableView || isTaskTableView);
 
   const activeColumnValueFilters = useMemo(() => {
@@ -3131,7 +3566,7 @@ export default function App() {
   ]);
 
   const canBoxSelect =
-    Boolean(currentAoa) && activeView.kind !== "addExp" && activeView.kind !== "uploadConfig";
+    Boolean(currentAoa) && activeView.kind !== "addExp" && activeView.kind !== "rankUp" && activeView.kind !== "uploadConfig" && activeView.kind !== "taskMapCheck";
 
   const isBoxSelectInteractiveTarget = (t: EventTarget | null): boolean => {
     const el = t instanceof HTMLElement ? t : null;
@@ -3955,7 +4390,7 @@ export default function App() {
           payload.items,
           config,
           {
-            region: config.gmtLockRegion,
+            region: gmtRequestRegions(config).lockRegion,
             title: payload.title,
             content: payload.content,
             senderName: payload.senderName,
@@ -4062,14 +4497,24 @@ export default function App() {
         push("表头与目标模板不一致");
         return;
       }
-      const nextAoa: SheetMatrix = [tpl.aoa[0], ...tpl.aoa.slice(1), ...built.dataRows];
+      const partition = partitionRowsForTemplateAppend({
+        templateAoa: tpl.aoa,
+        source: tpl.source,
+        candidateIdxs: built.idxs,
+        candidateDataRows: built.dataRows,
+      });
+      if (partition.appendIdxs.length === 0) {
+        push("所选行已在模板中");
+        return;
+      }
+      const nextAoa: SheetMatrix = [tpl.aoa[0], ...tpl.aoa.slice(1), ...partition.appendDataRows];
       let nextItems = tpl.items;
       if (tpl.source === "item") {
         const headersRow = currentAoa[0]?.map((h) => cellStr(h)) ?? [];
         const ridx = resolveRemarkColumnIndex(headersRow, config.itemRemarkColumn);
         const newItems = buildSendItemsFromSelection(
           currentAoa,
-          rows,
+          new Set(partition.appendIdxs),
           itemLineQty,
           ridx,
           getSendItemsWearOptsForAoa(currentAoa),
@@ -4081,7 +4526,11 @@ export default function App() {
       );
       await persist({ ...config, savedTemplates: list });
       clearRowSelection();
-      push(`已追加到模板「${tpl.title}」（${built.idxs.length} 行）`);
+      let msg = `已追加到模板「${tpl.title}」（${partition.appendIdxs.length} 行）`;
+      if (partition.skippedCount > 0) {
+        msg += `，跳过 ${partition.skippedCount} 行重复`;
+      }
+      push(msg);
     },
     [config, currentAoa, activeView, itemLineQty, getSendItemsWearOptsForAoa, push, persist, clearRowSelection],
   );
@@ -4340,11 +4789,12 @@ export default function App() {
     const accountId = gmtAccountIdDraft.trim();
     const remainingBefore = selectedRows.size;
     try {
+      const regions = gmtRequestRegions(config);
       const result = await gmtExecAdminFinishTask(gmtSessionSliceFromConfig(config), {
         envName: config.gmtEnvName!,
         accountId,
-        lockRegion: config.gmtLockRegion,
-        notiRegion: config.gmtNotiRegion,
+        lockRegion: regions.lockRegion,
+        notiRegion: regions.notiRegion,
         taskId: parsed.taskId,
       });
       const remainingAfter = Math.max(0, remainingBefore - 1);
@@ -4521,8 +4971,9 @@ export default function App() {
     setGoGmtModal({ instruction, repeatVisit: skipBrowser });
 
     if (!skipBrowser) {
+      const commandListUrl = `${gmtSessionSliceFromConfig(config).gmtBaseUrl}${GMT_COMMAND_LIST_PATH}`;
       window.setTimeout(() => {
-        void openUrl(GMT_COMMAND_LIST_URL)
+        void openUrl(commandListUrl)
           .then(() => {
             gmtBrowserOpenedThisSessionRef.current = true;
           })
@@ -4855,6 +5306,64 @@ export default function App() {
     [config, ensureGtopUploadReady, gtopLoggedIn, notify, persist, push, uploadConfigBusy],
   );
 
+  const runTaskMapTagCheck = useCallback(async () => {
+    if (!config || taskMapCheckBusy) return;
+    const root = config.excelWorkspaceRoot?.trim();
+    if (!root) {
+      notify("未配置工作区", { action: "任务地图检查", outcome: "failure" });
+      return;
+    }
+    setTaskMapCheckBusy(true);
+    setTagCheckError(null);
+    try {
+      let missionB64: string | null = null;
+      try {
+        missionB64 = await invoke<string>("read_file_base64", { path: excelMissionPath(root) });
+      } catch {
+        /* Mission.xlsx optional for cross-check remarks */
+      }
+      const report = await loadTagCheckReportFromWorkspace(root, missionB64);
+      setTagCheckReport(report);
+      notify(
+        `检查完成：${report.summary.errorCount} 错误，${report.summary.warnCount} 警告`,
+        {
+          action: "任务地图检查",
+          outcome: report.summary.errorCount > 0 ? "failure" : "success",
+        },
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setTagCheckError(msg);
+      setTagCheckReport(null);
+      notify(msg, { action: "任务地图检查", outcome: "failure" });
+    } finally {
+      setTaskMapCheckBusy(false);
+    }
+  }, [config, notify, taskMapCheckBusy]);
+
+  const exportTaskMapTagCheckCsv = useCallback(async () => {
+    if (!tagCheckReport || tagCheckReport.issues.length === 0) return;
+    try {
+      const path = await save({
+        defaultPath: "task-map-tag-check.xls",
+        filters: [{ name: "Excel", extensions: ["xls"] }],
+      });
+      if (!path || typeof path !== "string") return;
+      await invoke("write_text_file", {
+        path,
+        content: spreadsheetXmlWithBom(exportIssuesToSpreadsheetXml(tagCheckReport.issues)),
+      });
+      notify("已导出 Excel（相同任务 ID 同色填充）", {
+        action: "任务地图检查",
+        outcome: "success",
+        detail: path,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      notify(msg, { action: "导出任务地图检查结果", outcome: "failure" });
+    }
+  }, [notify, tagCheckReport]);
+
   const completeNextTaskFromPinned = () => {
     if (activeView.kind !== "task") {
       push("请先打开全部任务并勾选要完成的任务");
@@ -4900,6 +5409,8 @@ export default function App() {
       }
       const next = { ...defaultConfig(), excelWorkspaceRoot: er, gmAssistantLocalPath: "" };
       await invoke("save_config", { config: next });
+      configRef.current = next;
+      lastSavedConfigRef.current = next;
       setConfig(next);
       setWizardOpen(false);
       void loadExcelData(next);
@@ -5054,11 +5565,11 @@ export default function App() {
   };
 
   const GmtLoginModal = () => {
-    if (!gmtLoginModalOpen) return null;
+    if (!gmtLoginModalOpen || !config) return null;
     return (
       <div className="modal-back" onMouseDown={() => setGmtLoginModalOpen(false)}>
         <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-          <h2>GMT 登录</h2>
+          <h2>GMT {config.gmtPlatform === "cn" ? "国服" : "海外"}登录</h2>
           <p className="help">
             将打开内置浏览器完成 Garena SSO 登录；完成后点「完成登录」保存 Cookie。
           </p>
@@ -5428,7 +5939,7 @@ export default function App() {
         hintTitle={globalSendModal?.hint}
         initialItems={globalSendModal?.items ?? []}
         lastForm={config.globalSendLastForm ?? null}
-        defaultRegion={config.gmtLockRegion}
+        defaultRegion={gmtRequestRegions(config).lockRegion}
         gmtTradable={config.gmtTradable}
         submitting={globalSendSubmitting}
         onClose={() => setGlobalSendModal(null)}
@@ -5899,8 +6410,58 @@ export default function App() {
         </div>
         {!wizardOpen ? (
           <div className="gmt-bar">
+            <label className="gmt-platform-toggle" title="切换 GMT 与 GTOP 平台">
+              <span className={config.gmtPlatform === "overseas" ? "is-active" : ""}>海外</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={config.gmtPlatform === "cn"}
+                onChange={(e) => void changeGmtPlatform(e.target.checked ? "cn" : "overseas")}
+              />
+              <span className="gmt-platform-toggle-track" aria-hidden="true">
+                <span />
+              </span>
+              <span className={config.gmtPlatform === "cn" ? "is-active" : ""}>国服</span>
+            </label>
+            <label
+              className="gmt-platform-toggle"
+              title={
+                config.gmtPlatform === "cn"
+                  ? "国服下不可开启 PR"
+                  : "切换海外 PreLive（pre-krad / PreLive-SG）"
+              }
+            >
+              <span className={!config.gmtPreliveEnabled ? "is-active" : ""}>PR off</span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={Boolean(config.gmtPreliveEnabled)}
+                disabled={config.gmtPlatform === "cn"}
+                onChange={(e) => void changeGmtPrelive(e.target.checked)}
+              />
+              <span className="gmt-platform-toggle-track" aria-hidden="true">
+                <span />
+              </span>
+              <span className={config.gmtPreliveEnabled ? "is-active" : ""}>PR on</span>
+            </label>
             <span className={`gmt-status${gmtLoggedIn ? " gmt-status--ok" : ""}`}>
-              {gmtSessionChecking ? "GMT…" : gmtLoggedIn ? "GMT 已登录" : "GMT 未登录"}
+              {gmtSessionChecking
+                ? "GMT…"
+                : gmtLoggedIn
+                  ? `GMT ${
+                      config.gmtPlatform === "cn"
+                        ? "国服"
+                        : config.gmtPreliveEnabled
+                          ? "海外(PR)"
+                          : "海外"
+                    }已登录`
+                  : `GMT ${
+                      config.gmtPlatform === "cn"
+                        ? "国服"
+                        : config.gmtPreliveEnabled
+                          ? "海外(PR)"
+                          : "海外"
+                    }未登录`}
             </span>
             <button type="button" className="btn btn-sm" disabled={gmtSessionChecking} onClick={() => void openGmtLoginWindow()}>
               {gmtLoggedIn ? "重新登录" : "登录"}
@@ -5909,14 +6470,12 @@ export default function App() {
               <span className="gmt-field-label">分支环境</span>
               <select
                 className="gmt-select"
-                disabled={!gmtLoggedIn || gmtEnvs.length === 0}
+                disabled={!gmtLoggedIn || gmtEnvs.length === 0 || isPreliveGmtEnabled(config)}
                 value={config.gmtEnvId != null ? String(config.gmtEnvId) : ""}
                 onChange={(e) => {
                   const id = Number(e.target.value);
                   if (!Number.isFinite(id)) return;
-                  const env = gmtEnvs.find((x) => x.id === id);
-                  if (!env) return;
-                  void persist({ ...config, gmtEnvId: env.id, gmtEnvName: env.name });
+                  void selectTopbarGmtEnv(id);
                 }}
               >
                 <option value="">请选择</option>
@@ -6043,6 +6602,11 @@ export default function App() {
           onAddExpPresetRichAndMaxLevel={() =>
             void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
           }
+          rankUpAccent={config ? sidebarRankUpDefaultColor(config) : DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR}
+          onSelectRankUp={() => {
+            if (filterSheetOpen) return;
+            switchActiveView({ kind: "rankUp" });
+          }}
           sproutAccent={sidebarSproutDefaultColor()}
           addSproutBusy={addSproutBusy}
           onAddSproutOneClick={() => void runAddSproutOneClick()}
@@ -6057,6 +6621,12 @@ export default function App() {
           uploadConfigBusy={uploadConfigBusy}
           onUploadConfigPick={() => void pickAndUploadConfigCsvs()}
           onUploadConfigRestore={() => void restoreWorkspaceConfigCsvs()}
+          taskMapCheckAccent={sidebarTaskMapCheckDefaultColor()}
+          onSelectTaskMapCheck={() => {
+            if (filterSheetOpen) return;
+            switchActiveView({ kind: "taskMapCheck" });
+          }}
+          taskMapCheckBusy={taskMapCheckBusy}
           onCloseMenus={() => closeCtx()}
           onOpenGallery={() => {
             setSidebarGalleryOpen(true);
@@ -6115,6 +6685,11 @@ export default function App() {
             onAddExpPresetRichAndMaxLevel={() =>
               void runSidebarAddExpPreset(runAddExpPresetRichAndMaxLevel)
             }
+            rankUpAccent={sidebarRankUpDefaultColor(config)}
+            onSelectRankUp={() => {
+              if (filterSheetOpen) return;
+              switchActiveView({ kind: "rankUp" });
+            }}
             sproutAccent={sidebarSproutDefaultColor()}
             addSproutBusy={addSproutBusy}
             onAddSproutOneClick={() => void runAddSproutOneClick()}
@@ -6129,6 +6704,12 @@ export default function App() {
             uploadConfigBusy={uploadConfigBusy}
             onUploadConfigPick={() => void pickAndUploadConfigCsvs()}
             onUploadConfigRestore={() => void restoreWorkspaceConfigCsvs()}
+            taskMapCheckAccent={sidebarTaskMapCheckDefaultColor()}
+            onSelectTaskMapCheck={() => {
+              if (filterSheetOpen) return;
+              switchActiveView({ kind: "taskMapCheck" });
+            }}
+            taskMapCheckBusy={taskMapCheckBusy}
             templateDropHoverId={templateDropHoverId}
             templateDropRejectId={templateDropRejectId}
           />
@@ -6308,6 +6889,17 @@ export default function App() {
               ensureGmtLoggedIn={ensureGmtLoggedIn}
               logGmt={logGmt}
             />
+          ) : activeView.kind === "rankUp" && config ? (
+            <RankUpPanel
+              config={config}
+              ladder={rankLadder}
+              ladderLoadError={rankLadderLoadError}
+              gmtAccountIdDraft={gmtAccountIdDraft}
+              setGmtAccountIdDraft={setGmtAccountIdDraft}
+              commitGmtAccountIdDraft={commitGmtAccountIdDraft}
+              ensureGmtLoggedIn={ensureGmtLoggedIn}
+              logGmt={logGmt}
+            />
           ) : activeView.kind === "uploadConfig" && config ? (
             <UploadConfigPanel
               config={config}
@@ -6319,6 +6911,15 @@ export default function App() {
               onPickAndUpload={() => void pickAndUploadConfigCsvs()}
               onRestoreSingle={(csvFilename) => void restoreSingleModifiedConfigCsv(csvFilename)}
               onOpenSettings={() => setSettingsOpen(true)}
+            />
+          ) : activeView.kind === "taskMapCheck" && config ? (
+            <TaskMapCheckPanel
+              config={config}
+              busy={taskMapCheckBusy}
+              error={tagCheckError}
+              report={tagCheckReport}
+              onRunCheck={() => void runTaskMapTagCheck()}
+              onExportCsv={() => void exportTaskMapTagCheckCsv()}
             />
           ) : !currentAoa ? (
             <div className="empty">

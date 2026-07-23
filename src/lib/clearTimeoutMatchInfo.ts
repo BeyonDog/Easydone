@@ -5,6 +5,7 @@ import {
   gmtExecAdminClearTimeoutMatchInfo,
   gmtSessionSliceFromConfig,
 } from "./gmtClient.ts";
+import { gmtRequestRegions } from "./gmtPlatform.ts";
 import type { LogGmtPartial, OperationOutcome } from "./operationLog.ts";
 
 export type ClearTimeoutMatchInfoDeps = {
@@ -56,11 +57,12 @@ export async function runClearTimeoutMatchInfo(deps: ClearTimeoutMatchInfoDeps):
 
   try {
     const slice = gmtSessionSliceFromConfig(deps.config);
+    const regions = gmtRequestRegions(deps.config);
     const result = await gmtExecAdminClearTimeoutMatchInfo(slice, {
       envName: deps.config.gmtEnvName!.trim(),
       accountId,
-      lockRegion: deps.config.gmtLockRegion?.trim() || "SG",
-      notiRegion: deps.config.gmtNotiRegion?.trim() || "SG",
+      lockRegion: regions.lockRegion,
+      notiRegion: regions.notiRegion,
     });
     const msg = result.ok
       ? result.message || "重置服务器匹配成功"

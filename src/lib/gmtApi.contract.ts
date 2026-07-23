@@ -186,6 +186,34 @@ export function buildAdminClearTimeoutMatchInfoExecBody(
   };
 }
 
+export const GMT_COMMAND_ADMIN_MODIFY_RANK_POINTS = "AdminModifyRankPoints";
+
+export type AdminModifyRankPointsBuildInput = {
+  envName: string;
+  accountId: string;
+  lockRegion: string;
+  notiRegion: string;
+  /** 段位分增量（字符串，与 HAR 一致） */
+  deltaRankPoints: string;
+};
+
+export function buildAdminModifyRankPointsExecBody(
+  input: AdminModifyRankPointsBuildInput,
+): Record<string, unknown> {
+  return {
+    name: GMT_COMMAND_ADMIN_MODIFY_RANK_POINTS,
+    param: {
+      env: input.envName,
+      command: {
+        account_id: input.accountId,
+        lock_region: input.lockRegion,
+        noti_region: input.notiRegion,
+        delta_rank_points: input.deltaRankPoints,
+      },
+    },
+  };
+}
+
 export const GMT_COMMAND_ADD_SPROUT_SCORE = "AddSproutScore";
 export const SPROUT_SCORE_ONE_CLICK_AMOUNT = 100_000;
 

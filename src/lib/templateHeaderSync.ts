@@ -1,4 +1,5 @@
 import type { SavedTemplate } from "../types.ts";
+import { dedupeTemplateAoa } from "./templateAppend.ts";
 import { findItemSheetRowByItemId } from "./itemWearValue.ts";
 import {
   cellStr,
@@ -111,9 +112,9 @@ export function syncSavedTemplatesToMasterSheets(args: {
   const changedIds: string[] = [];
 
   const templates = args.templates.map((tpl) => {
-    if (tpl.source === "item") {
-      if (!args.itemAoa?.length) return tpl;
+    let working = tpl;
 
+    if (tpl.source === "item" && args.itemAoa?.length) {
       let nextAoa: SheetMatrix | null = null;
       if (isLegacySyntheticItemHeader(tpl.aoa[0])) {
         if (tpl.items.length > 0) {
@@ -124,21 +125,15 @@ export function syncSavedTemplatesToMasterSheets(args: {
       } else if (tpl.aoa?.length) {
         nextAoa = realignAoaToMasterHeader(tpl.aoa, args.itemAoa[0]!, "item");
       }
-
-      if (!nextAoa) return tpl;
-      changedIds.push(tpl.id);
-      return { ...tpl, aoa: nextAoa };
-    }
-
-    if (tpl.source === "task") {
-      if (!args.taskAoa?.length || !tpl.aoa?.length) return tpl;
+      if (nextAoa) working = { ...tpl, aoa: nextAoa };
+    } else if (tpl.source === "task" && args.taskAoa?.length && tpl.aoa?.length) {
       const nextAoa = realignAoaToMasterHeader(tpl.aoa, args.taskAoa[0]!, "task");
-      if (!nextAoa) return tpl;
-      changedIds.push(tpl.id);
-      return { ...tpl, aoa: nextAoa };
+      if (nextAoa) working = { ...tpl, aoa: nextAoa };
     }
 
-    return tpl;
+    const { tpl: deduped, removedCount } = dedupeTemplateAoa(working, args.itemRemarkColumn);
+    if (working !== tpl || removedCount > 0) changedIds.push(tpl.id);
+    return deduped;
   });
 
   return { templates, changedIds };

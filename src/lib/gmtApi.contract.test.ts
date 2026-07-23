@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildAdminAddExpExecBody,
   buildAdminClearTimeoutMatchInfoExecBody,
+  buildAdminModifyRankPointsExecBody,
   buildAddSproutScoreExecBody,
   buildAdminSendGlobalMailExecBody,
   buildAdminSendMailExecBody,
@@ -240,6 +241,28 @@ describe("buildAdminClearTimeoutMatchInfoExecBody", () => {
     assert.equal(param.command.lock_region, "SG");
     assert.equal(param.command.noti_region, "SG");
     assert.equal(param.command.task_id, undefined);
+  });
+});
+
+describe("buildAdminModifyRankPointsExecBody", () => {
+  it("matches HAR body for AdminModifyRankPoints", () => {
+    const body = buildAdminModifyRankPointsExecBody({
+      envName: "rct01",
+      accountId: "10002798",
+      lockRegion: "SG",
+      notiRegion: "SG",
+      deltaRankPoints: "10",
+    });
+    assert.equal(body.name, "AdminModifyRankPoints");
+    const param = body.param as {
+      env: string;
+      command: Record<string, string>;
+    };
+    assert.equal(param.env, "rct01");
+    assert.equal(param.command.account_id, "10002798");
+    assert.equal(param.command.lock_region, "SG");
+    assert.equal(param.command.noti_region, "SG");
+    assert.equal(param.command.delta_rank_points, "10");
   });
 });
 

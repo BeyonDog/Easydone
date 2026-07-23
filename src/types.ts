@@ -155,6 +155,7 @@ export interface AppConfig {
   sidebarTaskCardColor?: string | null;
   /** 侧栏「加经验加钱」固定卡片色 */
   sidebarAddExpCardColor?: string | null;
+  sidebarRankUpCardColor?: string | null;
   /** 全部道具卡片单独覆盖色；null 表示跟随 sidebarItemCardColor */
   sidebarItemCardColorOverride?: string | null;
   /** 全部任务卡片单独覆盖色 */
@@ -173,10 +174,18 @@ export interface AppConfig {
   themeWallpaperOpacity: number;
   initialItemFilterSheetShown: boolean;
   initialTaskFilterSheetShown: boolean;
+  gmtPlatform: "overseas" | "cn";
+  /** 海外 PreLive（PR）模式：走 pre-krad / PreLive-SG */
+  gmtPreliveEnabled: boolean;
   gmtBaseUrl: string;
   gmtCookie: string;
+  gmtCnCookie: string;
   gmtEnvId: number | null;
   gmtEnvName: string | null;
+  gmtOverseasEnvId: number | null;
+  gmtOverseasEnvName: string | null;
+  gmtCnEnvId: number | null;
+  gmtCnEnvName: string | null;
   gmtAccountId: string;
   gmtTradable: boolean;
   gmtLockRegion: string;
@@ -188,6 +197,14 @@ export interface AppConfig {
   gtopEnvName: string | null;
   gtopRegionServerId: string | null;
   gtopRegionServerName: string | null;
+  gtopOverseasEnvId: string | null;
+  gtopOverseasEnvName: string | null;
+  gtopOverseasRegionServerId: string | null;
+  gtopOverseasRegionServerName: string | null;
+  gtopCnEnvId: string | null;
+  gtopCnEnvName: string | null;
+  gtopCnRegionServerId: string | null;
+  gtopCnRegionServerName: string | null;
   gtopModifiedConfigCsv?: GtopModifiedConfigCsvState | null;
   itemServerWideSendSettings?: ItemServerWideSendSettings | null;
   globalSendLastForm?: GlobalSendLastForm | null;
@@ -201,7 +218,9 @@ export type ActiveView =
   | { kind: "item" }
   | { kind: "task" }
   | { kind: "addExp" }
+  | { kind: "rankUp" }
   | { kind: "uploadConfig" }
+  | { kind: "taskMapCheck" }
   | { kind: "template"; id: string }
   /** @deprecated 读盘后转为 template */
   | { kind: "snapshot"; id: string };

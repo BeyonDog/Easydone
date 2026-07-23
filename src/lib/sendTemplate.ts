@@ -7,6 +7,7 @@ import {
   parseLocalizationJson,
 } from "./itemServerWideSendSettings.ts";
 import { gmtExecAdminSendGlobalMail, gmtExecAdminSendMail, gmtSessionSliceFromConfig } from "./gmtClient";
+import { gmtRequestRegions } from "./gmtPlatform.ts";
 import {
   itemDurabilityMaxForSendItem,
   parseSendItemMergeKey,
@@ -199,13 +200,14 @@ export async function execAdminSendMailRewardItems(
 
   const formatError = (raw: string) =>
     formatGmtExecErrorMessage(raw, envDisplayLabel, config.gmtEnvId);
+  const regions = gmtRequestRegions(config);
 
   try {
     const result = await gmtExecAdminSendMail(gmtSessionSliceFromConfig(config), {
       envName: config.gmtEnvName!,
       accountId,
-      lockRegion: config.gmtLockRegion,
-      notiRegion: config.gmtNotiRegion,
+      lockRegion: regions.lockRegion,
+      notiRegion: regions.notiRegion,
       tradable: config.gmtTradable,
       rewardItems,
     });
@@ -247,13 +249,14 @@ export async function execAdminSendMailItems(
 
   const formatError = (raw: string) =>
     formatGmtExecErrorMessage(raw, envDisplayLabel, config.gmtEnvId);
+  const regions = gmtRequestRegions(config);
 
   try {
     const result = await gmtExecAdminSendMail(gmtSessionSliceFromConfig(config), {
       envName: config.gmtEnvName!,
       accountId,
-      lockRegion: config.gmtLockRegion,
-      notiRegion: config.gmtNotiRegion,
+      lockRegion: regions.lockRegion,
+      notiRegion: regions.notiRegion,
       tradable: config.gmtTradable,
       rewardItems,
     });
@@ -299,11 +302,12 @@ export async function execAdminSendGlobalMail(
   }
 
   const sw = normalizeItemServerWideSendSettings(config.itemServerWideSendSettings);
+  const regions = gmtRequestRegions(config);
 
   try {
     const result = await gmtExecAdminSendGlobalMail(gmtSessionSliceFromConfig(config), {
       envName,
-      region: fields.region.trim() || config.gmtLockRegion,
+      region: config.gmtPlatform === "cn" ? regions.lockRegion : fields.region.trim() || regions.lockRegion,
       title: fields.title.trim(),
       content: fields.content,
       startTime: fields.startTime,

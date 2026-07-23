@@ -18,6 +18,7 @@ import {
   gmtSessionSliceFromConfig,
   type AdminAddExpInvokeResultPayload,
 } from "./gmtClient.ts";
+import { gmtRequestRegions } from "./gmtPlatform.ts";
 import {
   formatAddExpResultExtra,
   type LogGmtPartial,
@@ -100,12 +101,13 @@ async function guardBeforeRequest(
 
 async function invokeAddExp(deps: AddExpPresetRunnerDeps, expStr: string) {
   const slice = gmtSessionSliceFromConfig(deps.config);
+  const regions = gmtRequestRegions(deps.config);
   return gmtExecAdminAddExp(slice, {
     envName: deps.config.gmtEnvName!.trim(),
     accountId: deps.gmtAccountIdDraft.trim(),
     exp: expStr,
-    lockRegion: deps.config.gmtLockRegion?.trim() || "SG",
-    notiRegion: deps.config.gmtNotiRegion?.trim() || "SG",
+    lockRegion: regions.lockRegion,
+    notiRegion: regions.notiRegion,
   });
 }
 

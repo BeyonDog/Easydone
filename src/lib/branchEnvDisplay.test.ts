@@ -20,12 +20,39 @@ describe("branchEnvDisplay", () => {
     assert.equal(getBranchEnvDisplayLabel("GNG-rct05"), "(GRPC) rct05");
   });
 
-  it("maps kd-cn hosts to exact display names (not bare rct01/sbt01)", () => {
-    assert.equal(getBranchEnvDisplayLabel("kd-cn-rct01"), "kd-cn-rct01");
+  it("maps real CN GMT names while keeping kd-cn office hosts distinct", () => {
+    assert.equal(getBranchEnvDisplayLabel("CNRCT02"), "(GRPC) CNRCT02");
+    assert.equal(getBranchEnvDisplayLabel("CNRCT01"), "(GRPC) CNRCT01");
+    assert.equal(getBranchEnvDisplayLabel("CNSBT"), "(GRPC) CNSBT");
     assert.equal(getBranchEnvDisplayLabel("kd-cn-rct02"), "kd-cn-rct02");
+    assert.equal(getBranchEnvDisplayLabel("kd-cn-rct01"), "kd-cn-rct01");
     assert.equal(getBranchEnvDisplayLabel("kd-cn-sbt01"), "kd-cn-sbt01");
     assert.notEqual(getBranchEnvDisplayLabel("kd-cn-rct01"), "(GRPC) rct01");
     assert.notEqual(getBranchEnvDisplayLabel("kd-cn-rct01"), "(GSGCI) rct01");
+  });
+
+  it("does not let kd-cn hosts disturb overseas GRPC/GSGCI disambiguation", () => {
+    const labels = buildBranchEnvDisplayLabelMap([
+      { id: 1, name: "kd-cn-rct01", protocol: 2 },
+      { id: 17, name: "rct01", protocol: 2 },
+      { id: 25, name: "rct01", protocol: 1 },
+    ]);
+    assert.equal(labels.get("1"), "kd-cn-rct01");
+    assert.equal(labels.get("17"), "(GRPC) rct01");
+    assert.equal(labels.get("25"), "(GSGCI) rct01");
+  });
+
+  it("keeps GMT API names unchanged while sorting CN environments", () => {
+    const items = [
+      { id: 3, name: "CNSBT", protocol: 2 },
+      { id: 6, name: "CNRCT01", protocol: 2 },
+      { id: 7, name: "CNRCT02", protocol: 2 },
+    ];
+    const sorted = sortBranchEnvEntries(items);
+    assert.deepEqual(
+      sorted.map(({ name }) => name),
+      ["CNRCT02", "CNRCT01", "CNSBT"],
+    );
   });
 
   it("maps protocol to branch group", () => {
@@ -74,11 +101,12 @@ describe("branchEnvDisplay", () => {
   });
 
   it("preserves exact display strings count", () => {
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 17);
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER.length, 20);
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[1], "(GRPC)pt01");
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[9], "(GRPC)CCS");
     assert.equal(BRANCH_ENV_DISPLAY_ORDER[14], "kd-cn-rct01");
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER[15], "kd-cn-rct02");
-    assert.equal(BRANCH_ENV_DISPLAY_ORDER[16], "kd-cn-sbt01");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[17], "(GRPC) CNRCT02");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[18], "(GRPC) CNRCT01");
+    assert.equal(BRANCH_ENV_DISPLAY_ORDER[19], "(GRPC) CNSBT");
   });
 });

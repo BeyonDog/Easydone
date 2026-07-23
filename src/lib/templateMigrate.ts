@@ -3,7 +3,7 @@ import {
   parseCellAsInteger,
   resolveItemIdColumnIndex,
   type SheetMatrix,
-} from "./xlsxHelpers";
+} from "./xlsxHelpers.ts";
 import type { AppConfig, SavedSendTemplate, SavedSnapshot, SavedTemplate, SendTemplateItem } from "../types";
 
 const MAX_TEMPLATES = 50;

@@ -5,9 +5,11 @@ import {
   SIDEBAR_PINNED_ADD_EXP,
   SIDEBAR_PINNED_ADD_SPROUT,
   SIDEBAR_PINNED_ITEM,
+  SIDEBAR_PINNED_RANK_UP,
   SIDEBAR_PINNED_RESET_MATCH,
   SIDEBAR_PINNED_TASK,
   SIDEBAR_PINNED_UPLOAD_CONFIG,
+  SIDEBAR_PINNED_TASK_MAP_CHECK,
 } from "./lib/sidebarCardRegistry.ts";
 import {
   resolvePinnedItemCardColor,
@@ -15,9 +17,11 @@ import {
   resolveTemplateCardColor,
   sidebarAddExpDefaultColor,
   sidebarCardAccentStyleObj,
+  sidebarRankUpDefaultColor,
   sidebarResetMatchDefaultColor,
   sidebarSproutDefaultColor,
   sidebarUploadConfigDefaultColor,
+  sidebarTaskMapCheckDefaultColor,
 } from "./lib/sidebarCardColor.ts";
 import { formatSidebarCardCreatedAt } from "./lib/formatSidebarCardCreatedAt.ts";
 
@@ -32,19 +36,24 @@ export type SidebarCardRendererProps = {
   galleryHiddenStyle?: boolean;
   addExpAccent: string;
   addExpPresetBusy?: boolean;
+  rankUpAccent: string;
   sproutAccent: string;
   addSproutBusy?: boolean;
   resetMatchAccent: string;
   clearMatchBusy?: boolean;
   uploadConfigAccent: string;
   uploadConfigBusy?: boolean;
+  taskMapCheckAccent: string;
+  taskMapCheckBusy?: boolean;
   serverWideSendEnabled?: boolean;
   templateDropHoverId?: string | null;
   templateDropRejectId?: string | null;
   onSelectItem: () => void;
   onSelectTask: () => void;
   onSelectAddExp: () => void;
+  onSelectRankUp: () => void;
   onSelectUploadConfig: () => void;
+  onSelectTaskMapCheck: () => void;
   onSelectTemplate: (id: string) => void;
   onAddExpPresetMaxLevel?: () => void;
   onAddExpPresetRich?: () => void;
@@ -70,9 +79,11 @@ function cardAccent(
   config: AppConfig,
   descriptor: SidebarCardDescriptor,
   addExpAccent: string,
+  rankUpAccent: string,
   sproutAccent: string,
   resetMatchAccent: string,
   uploadConfigAccent: string,
+  taskMapCheckAccent: string,
 ): string {
   if (descriptor.kind === "template") {
     return resolveTemplateCardColor(config, descriptor.template);
@@ -84,12 +95,16 @@ function cardAccent(
       return resolvePinnedTaskCardColor(config);
     case SIDEBAR_PINNED_ADD_EXP:
       return addExpAccent || sidebarAddExpDefaultColor(config);
+    case SIDEBAR_PINNED_RANK_UP:
+      return rankUpAccent || sidebarRankUpDefaultColor(config);
     case SIDEBAR_PINNED_ADD_SPROUT:
       return sproutAccent || sidebarSproutDefaultColor();
     case SIDEBAR_PINNED_RESET_MATCH:
       return resetMatchAccent || sidebarResetMatchDefaultColor();
     case SIDEBAR_PINNED_UPLOAD_CONFIG:
       return uploadConfigAccent || sidebarUploadConfigDefaultColor();
+    case SIDEBAR_PINNED_TASK_MAP_CHECK:
+      return taskMapCheckAccent || sidebarTaskMapCheckDefaultColor();
     default:
       return resolvePinnedItemCardColor(config);
   }
@@ -109,8 +124,12 @@ function isCardActive(activeView: ActiveView, descriptor: SidebarCardDescriptor)
       return activeView.kind === "task";
     case SIDEBAR_PINNED_ADD_EXP:
       return activeView.kind === "addExp";
+    case SIDEBAR_PINNED_RANK_UP:
+      return activeView.kind === "rankUp";
     case SIDEBAR_PINNED_UPLOAD_CONFIG:
       return activeView.kind === "uploadConfig";
+    case SIDEBAR_PINNED_TASK_MAP_CHECK:
+      return activeView.kind === "taskMapCheck";
     default:
       return false;
   }
@@ -127,19 +146,24 @@ export function SidebarCardRenderer({
   galleryHiddenStyle = false,
   addExpAccent,
   addExpPresetBusy = false,
+  rankUpAccent,
   sproutAccent,
   addSproutBusy = false,
   resetMatchAccent,
   clearMatchBusy = false,
   uploadConfigAccent,
   uploadConfigBusy = false,
+  taskMapCheckAccent,
+  taskMapCheckBusy: _taskMapCheckBusy = false,
   serverWideSendEnabled = false,
   templateDropHoverId = null,
   templateDropRejectId = null,
   onSelectItem,
   onSelectTask,
   onSelectAddExp,
+  onSelectRankUp,
   onSelectUploadConfig,
+  onSelectTaskMapCheck,
   onSelectTemplate,
   onAddExpPresetMaxLevel,
   onAddExpPresetRich,
@@ -160,7 +184,16 @@ export function SidebarCardRenderer({
   onTemplateContextMenu,
   onCardMainPanelClick,
 }: SidebarCardRendererProps) {
-  const accent = cardAccent(config, descriptor, addExpAccent, sproutAccent, resetMatchAccent, uploadConfigAccent);
+  const accent = cardAccent(
+    config,
+    descriptor,
+    addExpAccent,
+    rankUpAccent,
+    sproutAccent,
+    resetMatchAccent,
+    uploadConfigAccent,
+    taskMapCheckAccent,
+  );
   const isActive = isCardActive(activeView, descriptor);
   const modeClass = mode === "grid" ? " card--sidebar-grid" : "";
   const hiddenClass = galleryHiddenStyle ? " sidebar-card-hidden-in-gallery" : "";
@@ -185,8 +218,16 @@ export function SidebarCardRenderer({
         onSelectAddExp();
         onCardMainPanelClick?.();
         break;
+      case SIDEBAR_PINNED_RANK_UP:
+        onSelectRankUp();
+        onCardMainPanelClick?.();
+        break;
       case SIDEBAR_PINNED_UPLOAD_CONFIG:
         onSelectUploadConfig();
+        onCardMainPanelClick?.();
+        break;
+      case SIDEBAR_PINNED_TASK_MAP_CHECK:
+        onSelectTaskMapCheck();
         onCardMainPanelClick?.();
         break;
       default:
@@ -449,6 +490,26 @@ export function SidebarCardRenderer({
     );
   }
 
+  if (pinned === SIDEBAR_PINNED_RANK_UP) {
+    return (
+      <div
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-rank-up${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        style={sidebarCardAccentStyleObj(accent)}
+        onClick={handleMainClick}
+      >
+        {visibilityToggle ? (
+          <div className="sidebar-card-gallery-controls" onClick={(e) => e.stopPropagation()}>
+            {visibilityToggle}
+            {dragHandle}
+          </div>
+        ) : dragHandle ? (
+          <div className="sidebar-card-drag-row">{dragHandle}</div>
+        ) : null}
+        <div className="card-title">{descriptor.title}</div>
+      </div>
+    );
+  }
+
   if (pinned === SIDEBAR_PINNED_ADD_SPROUT) {
     return (
       <div
@@ -549,6 +610,26 @@ export function SidebarCardRenderer({
             恢复配置
           </button>
         </div>
+        <div className="card-title">{descriptor.title}</div>
+      </div>
+    );
+  }
+
+  if (pinned === SIDEBAR_PINNED_TASK_MAP_CHECK) {
+    return (
+      <div
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-task-map-check${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        style={sidebarCardAccentStyleObj(accent)}
+        onClick={handleMainClick}
+      >
+        {visibilityToggle ? (
+          <div className="sidebar-card-gallery-controls" onClick={(e) => e.stopPropagation()}>
+            {visibilityToggle}
+            {dragHandle}
+          </div>
+        ) : dragHandle ? (
+          <div className="sidebar-card-drag-row">{dragHandle}</div>
+        ) : null}
         <div className="card-title">{descriptor.title}</div>
       </div>
     );

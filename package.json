@@ -1,7 +1,7 @@
 {
   "name": "easydone",
   "private": true,
-  "version": "1.1.8",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "dev": "node scripts/free-dev-port.mjs && vite",
@@ -10,7 +10,7 @@
     "tauri": "tauri",
     "restore:zh": "node scripts/restore-app-zh.mjs",
     "verify:zh": "node scripts/verify-zh.mjs",
-    "test": "node --experimental-strip-types --test src/lib/*.test.ts scripts/backup-key-repo.test.mjs scripts/signing-key-guard.test.mjs",
+    "test": "node --experimental-strip-types --test src/lib/*.test.ts src/lib/taskMapTagCheck/*.test.ts scripts/backup-key-repo.test.mjs scripts/signing-key-guard.test.mjs",
     "signing:check": "node scripts/signing-key-guard.mjs",
     "signing:init": "node scripts/init-signing-key.mjs",
     "unlock:build": "node scripts/unlock-build.mjs",

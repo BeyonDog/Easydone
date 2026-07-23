@@ -1,0 +1,12 @@
+  MapChestBoxRecords:
+  - InstTags:
+    - TriggerTag: 1013001
+    Position: {x: 161.36, y: 9.746, z: 144.03}
+  - InstTags:
+    - TriggerTag: 30000220
+    Position: {x: 193.912, y: 7.0924907, z: 149.934}
+  MapLootRecords:
+  MapTriggerRecords:
+  - triggerTags:
+    - TriggerTag: 1012
+    pos: {x: 10, y: 0, z: 20}

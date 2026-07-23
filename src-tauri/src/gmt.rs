@@ -123,6 +123,7 @@ fn gmt_exec_success_message(body: &Value) -> String {
         Some("AdminAddExp") => "加经验成功".into(),
         Some("AdminClearTimeoutMatchInfo") => "重置服务器匹配成功".into(),
         Some("AddSproutScore") => "加豆芽分成功".into(),
+        Some("AdminModifyRankPoints") => "升段位成功".into(),
         _ => "发放成功".into(),
     }
 }

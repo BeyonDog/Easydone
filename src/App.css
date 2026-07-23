@@ -251,6 +251,71 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
+.gmt-platform-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gmt-platform-toggle > span.is-active {
+  color: var(--app-accent, #5b8cff);
+  font-weight: 600;
+}
+
+.gmt-platform-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gmt-platform-toggle-track {
+  position: relative;
+  width: 2rem;
+  height: 1.05rem;
+  border: 1px solid var(--app-border, #2a2f3a);
+  border-radius: 999px;
+  background: var(--app-input-bg, #1a1d24);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.gmt-platform-toggle-track > span {
+  position: absolute;
+  top: 0.12rem;
+  left: 0.14rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--app-muted, #9aa3b2);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.gmt-platform-toggle input:checked + .gmt-platform-toggle-track {
+  border-color: var(--app-accent, #5b8cff);
+}
+
+.gmt-platform-toggle input:checked + .gmt-platform-toggle-track > span {
+  transform: translateX(0.92rem);
+  background: var(--app-accent, #5b8cff);
+}
+
+.gmt-platform-toggle input:focus-visible + .gmt-platform-toggle-track {
+  outline: 2px solid var(--app-accent, #5b8cff);
+  outline-offset: 2px;
+}
+
+.gmt-platform-toggle input:disabled + .gmt-platform-toggle-track {
+  opacity: 0.45;
+}
+
+.gmt-platform-toggle:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .gmt-status {
   font-size: 0.75rem;
   color: var(--app-muted, #9aa3b2);
@@ -854,6 +919,243 @@ button:focus-visible {
   padding-left: 1.1rem;
   font-size: 0.85rem;
   line-height: 1.45;
+}
+
+.main .task-map-check-panel {
+  flex: 1;
+  min-height: 0;
+  max-width: min(64rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.25rem 0.15rem 1.5rem;
+  overflow: hidden;
+}
+
+.task-map-check-header,
+.task-map-check-env-card,
+.task-map-check-filters,
+.task-map-check-conditions,
+.task-map-check-error,
+.task-map-check-hint {
+  flex-shrink: 0;
+}
+
+.task-map-check-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.task-map-check-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.task-map-check-lead {
+  margin: 0.35rem 0 0;
+  line-height: 1.55;
+}
+
+.task-map-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.task-map-check-env-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-input-bg) 35%, transparent);
+}
+
+.task-map-check-env-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+}
+
+.task-map-check-env-label {
+  font-size: 0.85rem;
+  color: var(--app-muted-fg, #888);
+  min-width: 4.5rem;
+}
+
+.task-map-check-env-value {
+  font-size: 0.92rem;
+  word-break: break-word;
+}
+
+.task-map-check-env-value--path {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.task-map-check-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.task-map-check-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-input-bg) 25%, transparent);
+}
+
+.task-map-check-stat--error {
+  border-color: color-mix(in srgb, #e5484d 45%, var(--app-border));
+}
+
+.task-map-check-stat--warn {
+  border-color: color-mix(in srgb, #f5a623 45%, var(--app-border));
+}
+
+.task-map-check-stat-num {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.task-map-check-stat-label {
+  font-size: 0.78rem;
+  color: var(--app-muted-fg, #888);
+}
+
+.task-map-check-error {
+  margin: 0;
+  color: var(--app-danger-fg, #e5484d);
+}
+
+.task-map-check-hint {
+  margin: 0;
+  color: var(--app-muted-fg, #888);
+}
+
+.task-map-check-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1rem;
+}
+
+.task-map-check-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.task-map-check-filter--grow {
+  flex: 1 1 12rem;
+  min-width: 10rem;
+}
+
+.task-map-check-filter select,
+.task-map-check-filter input {
+  min-width: 8rem;
+}
+
+.task-map-check-conditions {
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+}
+
+.task-map-check-conditions summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.task-map-check-condition-list {
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.task-map-check-condition-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+}
+
+.task-map-check-condition-kind,
+.task-map-check-condition-tag,
+.task-map-check-condition-task {
+  color: var(--app-muted-fg, #888);
+}
+
+.task-map-check-condition-remark {
+  flex: 1 1 100%;
+  color: var(--app-muted-fg, #888);
+}
+
+.task-map-check-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+}
+
+.task-map-check-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.task-map-check-table th,
+.task-map-check-table td {
+  padding: 0.45rem 0.55rem;
+  border-bottom: 1px solid var(--app-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.task-map-check-table th {
+  position: sticky;
+  top: 0;
+  background: var(--app-row-sticky-bg, var(--app-table-bg));
+  color: inherit;
+  z-index: 1;
+}
+
+.task-map-check-row--error {
+  background: color-mix(in srgb, #e5484d 8%, transparent);
+}
+
+.task-map-check-row--warn {
+  background: color-mix(in srgb, #f5a623 8%, transparent);
+}
+
+.task-map-check-sub {
+  font-size: 0.78rem;
+  color: var(--app-muted-fg, #888);
+  margin-top: 0.15rem;
+}
+
+.task-map-check-empty {
+  text-align: center;
+  color: var(--app-muted-fg, #888);
 }
 
 .btn-linkish {
@@ -3598,4 +3900,95 @@ textarea.bookmark {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.rank-up-panel {
+  padding: 1rem 1.25rem 1.5rem;
+  max-width: 52rem;
+}
+
+.rank-up-panel-title {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.rank-up-score-row .rank-up-score-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.rank-up-slider {
+  margin: 1.25rem 0 1rem;
+}
+
+.rank-up-slider--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.rank-up-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.68rem;
+  color: var(--app-text-muted);
+}
+
+.rank-up-slider-track {
+  position: relative;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--app-border, #2a2f3a);
+  background: var(--app-input-bg, #1a1d24);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rank-up-slider-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-accent, #c9a227) 55%, transparent);
+  pointer-events: none;
+}
+
+.rank-up-slider-node {
+  position: absolute;
+  top: 50%;
+  width: 0.42rem;
+  height: 0.42rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--app-border, #2a2f3a);
+  border-radius: 50%;
+  background: var(--app-muted, #9aa3b2);
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+
+.rank-up-slider-node--major {
+  width: 0.78rem;
+  height: 0.78rem;
+  background: var(--app-accent, #c9a227);
+  border-color: color-mix(in srgb, var(--app-accent, #c9a227) 70%, #000);
+  z-index: 1;
+}
+
+.rank-up-slider-node.is-selected {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent, #c9a227) 70%, transparent);
+  background: #fff;
+}
+
+.rank-up-selection {
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.card--sidebar-rank-up {
+  /* accent via inline style */
 }
