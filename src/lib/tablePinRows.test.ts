@@ -19,10 +19,11 @@ describe("pinSelectionToFront", () => {
 
 describe("pinVisibleSelectionToFront", () => {
   it("pins visible selection on item table", () => {
-    const pinned = { item: [9], task: [] };
+    const pinned = { item: [9], task: [], chest: [] };
     const result = pinVisibleSelectionToFront(pinned, "item", [2, 3], [3, 2]);
     assert.deepEqual(result.item, [3, 2, 9]);
     assert.deepEqual(result.task, []);
+    assert.deepEqual(result.chest, []);
   });
 });
 

@@ -10,6 +10,7 @@ import {
   skillCsvCandidatePaths,
   taskCsvCandidatePaths,
 } from "../paths.ts";
+import { collectFieldIssues, mergeHealthReport, parseConditionCsvAll, parseTaskCsvAll } from "../taskConfigHealth.ts";
 import {
   buildMapVariants,
   formatIssueDescription,
@@ -118,7 +119,7 @@ export async function loadTagCheckReportFromWorkspace(
   const skillText = await resolveFirstText(skillCsvCandidatePaths(trimmed));
   const masteryText = await resolveFirstText(masteryCsvCandidatePaths(trimmed));
 
-  return runTagCheck({
+  const report = runTagCheck({
     conditionCsvText: conditionText,
     taskCsvText: taskCsvText,
     matchMapConfigJson: matchConfigText,
@@ -131,6 +132,8 @@ export async function loadTagCheckReportFromWorkspace(
     skillIds: skillText ? parseSkillIdSet(skillText) : undefined,
     masteryIds: masteryText ? parseMasteryIdSet(masteryText) : undefined,
   });
+  const fieldIssues = collectFieldIssues(parseTaskCsvAll(taskCsvText), parseConditionCsvAll(conditionText));
+  return mergeHealthReport(report, fieldIssues);
 }
 
 export function exportIssuesToCsv(issues: TagCheckReport["issues"]): string {

@@ -40,6 +40,12 @@ describe("formatIssueSummary", () => {
     assert.ok(!reason.includes("王权的终章"));
   });
 
+  it("formats empty_or_wrong_tag description", () => {
+    const issue = baseIssue({ kind: "empty_or_wrong_tag", severity: "warn" });
+    assert.equal(formatIssueDescription(issue), "Tag 1013001 分层交互物 Tag 为空或未挂");
+    assert.match(formatIssueReason(issue), /条件 30000361/);
+  });
+
   it("formats config_missing description and reason", () => {
     const issue = baseIssue({
       kind: "config_missing",
@@ -50,7 +56,7 @@ describe("formatIssueSummary", () => {
       mapDataFile: "",
       matchTier: "other",
     });
-    assert.equal(formatIssueDescription(issue), "配置表缺少目标 9999999");
+    assert.equal(formatIssueDescription(issue), "缺少目标 9999999");
     assert.match(formatIssueReason(issue), /条件 30000361/);
   });
 
@@ -67,5 +73,17 @@ describe("formatIssueSummary", () => {
     assert.equal(formatIssueDescription(issue), "未配置 GameMode，无法确定目标地图");
     assert.match(formatIssueReason(issue), /条件 30000361/);
     assert.match(formatIssueReason(issue), /GameMode/);
+  });
+
+  it("formats orphan_arrive_trigger description", () => {
+    const issue = baseIssue({
+      kind: "orphan_arrive_trigger",
+      targetTag: 103802,
+      conditionId: "30000272",
+      taskId: "3000027",
+      taskName: "洛萨阴影",
+    });
+    assert.equal(formatIssueDescription(issue), "到达 Trigger 103802 附近无有效房间");
+    assert.match(formatIssueReason(issue), /条件 30000272/);
   });
 });

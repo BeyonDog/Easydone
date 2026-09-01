@@ -4,6 +4,8 @@ import {
   CN_GMT_ENV_OPTIONS,
   gmtRequestRegions,
   selectCnServer,
+  selectOverseasTopbarEnvWithGtopSync,
+  selectPreliveTopbarEnv,
   setGmtPreliveEnabled,
   switchGmtPlatform,
 } from "./gmtPlatform.ts";
@@ -61,7 +63,7 @@ describe("GMT/GTOP platform selection", () => {
     assert.equal(next.gmtOverseasEnvName, "rct01");
   });
 
-  it("locks PreLive-SG when enabling PR and restores overseas env when disabling", () => {
+  it("defaults to PreLive-SG when enabling PR and restores overseas env when disabling", () => {
     const on = setGmtPreliveEnabled(overseasConfig, true);
     assert.equal(on.gmtPreliveEnabled, true);
     assert.equal(on.gmtEnvId, PRELIVE_GMT_ENV.id);
@@ -75,6 +77,27 @@ describe("GMT/GTOP platform selection", () => {
     assert.equal(off.gmtEnvName, "rct01");
   });
 
+  it("keeps an allowlisted PR env when re-enabling and does not overwrite overseas snapshot", () => {
+    const onSg = setGmtPreliveEnabled(overseasConfig, true);
+    const onKol = selectPreliveTopbarEnv(onSg, { id: 42, name: "KOL-US", protocol: 2 });
+    assert.equal(onKol.gmtEnvId, 42);
+    assert.equal(onKol.gmtEnvName, "KOL-US");
+    assert.equal(onKol.gmtOverseasEnvId, 17);
+    assert.equal(onKol.gtopRegionServerName, "GNG-pt01");
+
+    const toCn = switchGmtPlatform(onKol, "cn");
+    assert.equal(toCn.gmtPreliveEnabled, false);
+    assert.equal(toCn.gmtOverseasEnvId, 17);
+    assert.equal(toCn.gmtOverseasEnvName, "rct01");
+  });
+
+  it("ignores non-allowlisted names in selectPreliveTopbarEnv", () => {
+    const on = setGmtPreliveEnabled(overseasConfig, true);
+    const next = selectPreliveTopbarEnv(on, { id: 1, name: "rct01", protocol: 2 });
+    assert.equal(next.gmtEnvId, PRELIVE_GMT_ENV.id);
+    assert.equal(next.gmtEnvName, PRELIVE_GMT_ENV.name);
+  });
+
   it("pairs a CN GMT server with the matching GTOP API name", () => {
     const cnConfig = switchGmtPlatform(overseasConfig, "cn");
     const next = selectCnServer(cnConfig, "CNRCT01");
@@ -85,6 +108,36 @@ describe("GMT/GTOP platform selection", () => {
     assert.equal(next.gtopRegionServerId, null);
     assert.equal(next.gtopRegionServerName, "CN-rct01");
     assert.equal(next.gtopCnEnvId, null);
+  });
+
+  it("syncs overseas GTOP region server when mapping exists", () => {
+    const next = selectOverseasTopbarEnvWithGtopSync(overseasConfig, { id: 123, name: "pt02", protocol: 2 });
+    assert.equal(next.gmtEnvId, 123);
+    assert.equal(next.gmtEnvName, "pt02");
+    assert.equal(next.gmtOverseasEnvId, 123);
+    assert.equal(next.gmtOverseasEnvName, "pt02");
+
+    assert.equal(next.gtopRegionServerId, null);
+    assert.equal(next.gtopRegionServerName, "GNG-pt02");
+    assert.equal(next.gtopOverseasRegionServerId, null);
+    assert.equal(next.gtopOverseasRegionServerName, "GNG-pt02");
+  });
+
+  it("keeps previous overseas GTOP target when overseas env has no mapping (CCS)", () => {
+    const next = selectOverseasTopbarEnvWithGtopSync(overseasConfig, { id: 456, name: "CCS", protocol: 2 });
+    assert.equal(next.gmtEnvId, 456);
+    assert.equal(next.gmtEnvName, "CCS");
+    assert.equal(next.gtopRegionServerId, "64");
+    assert.equal(next.gtopRegionServerName, "GNG-pt01");
+    assert.equal(next.gtopOverseasRegionServerName, null);
+  });
+
+  it("disambiguates overseas sbt via protocol", () => {
+    const gsgci = selectOverseasTopbarEnvWithGtopSync(overseasConfig, { id: 1, name: "sbt", protocol: 1 });
+    assert.equal(gsgci.gtopRegionServerName, "krad-sbt01");
+
+    const grpc = selectOverseasTopbarEnvWithGtopSync(overseasConfig, { id: 2, name: "sbt", protocol: 2 });
+    assert.equal(grpc.gtopRegionServerName, "krad-sbt02");
   });
 
   it("uses CN request regions without overwriting overseas settings", () => {

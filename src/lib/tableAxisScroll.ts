@@ -19,3 +19,14 @@ export function resolveHorizontalWheelDelta(deltaX: number, deltaY: number, shif
   if (shiftKey && deltaY !== 0) return deltaY;
   return deltaX;
 }
+
+/** Hysteresis: avoid toggling horizontal overflow when maxLeft hovers near zero. */
+export function resolveHorizontalOverflowVisible(
+  maxScrollLeft: number,
+  currentlyVisible: boolean,
+  showThreshold = 2,
+): boolean {
+  if (maxScrollLeft <= 0) return false;
+  if (currentlyVisible) return true;
+  return maxScrollLeft > showThreshold;
+}

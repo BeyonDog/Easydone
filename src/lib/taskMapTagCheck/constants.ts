@@ -43,16 +43,21 @@ export const GAME_MODE_TKV = 201;
 /** TaskType：仅主线进入检查范围 */
 export const TASK_TYPE_MAIN = 3;
 
-/** 新手/测试向 TaskID（与正式剧情 3000xxx 区分），不参与地图检查 */
+/** 新手/测试向 TaskID（与正式剧情 3000xxx 区分），不参与地图检查 / 配置健康检查 */
 export const EXCLUDED_MAP_CHECK_TASK_ID_MIN = 30000;
 export const EXCLUDED_MAP_CHECK_TASK_ID_MAX = 30035;
-export const EXCLUDED_MAP_CHECK_TASK_IDS = new Set<number>([9000001]);
+export const EXCLUDED_MAP_CHECK_TASK_IDS = new Set<number>([100000, 9000001]);
+export const EXCLUDED_MAP_CHECK_TASK_ID_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [10001, 10012],
+  [2000001, 2000008],
+  [EXCLUDED_MAP_CHECK_TASK_ID_MIN, EXCLUDED_MAP_CHECK_TASK_ID_MAX],
+];
 
 export function isExcludedFromMapCheck(taskId: string | number): boolean {
   const n = typeof taskId === "number" ? taskId : Number(taskId);
   if (!Number.isFinite(n)) return false;
-  if (n >= EXCLUDED_MAP_CHECK_TASK_ID_MIN && n <= EXCLUDED_MAP_CHECK_TASK_ID_MAX) return true;
-  return EXCLUDED_MAP_CHECK_TASK_IDS.has(n);
+  if (EXCLUDED_MAP_CHECK_TASK_IDS.has(n)) return true;
+  return EXCLUDED_MAP_CHECK_TASK_ID_RANGES.some(([lo, hi]) => n >= lo && n <= hi);
 }
 
 /** Difficulty → match tier */
@@ -101,3 +106,6 @@ export function isBeginnerScene(sceneBase: string, modeLabel?: string): boolean 
   if (modeLabel && /新手/.test(modeLabel)) return true;
   return false;
 }
+
+/** Max x/z distance (m) from arrive trigger to nearest RoomLvlUp anchor before orphan alert. */
+export const ROOM_ANCHOR_MAX_DIST_M = 30;

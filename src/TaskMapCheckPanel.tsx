@@ -63,9 +63,10 @@ export function TaskMapCheckPanel({
         <div>
           <h2 className="task-map-check-title">任务地图检查</h2>
           <p className="task-map-check-lead">
-            仅主线（TaskType=3，已排除 TaskID 30000–30035 / 9000001）：到达 / 开宝箱 / 杀怪 /
+            仅主线（TaskType=3，已排除 TaskID 10001–10012 / 2000001–2000008 / 100000 / 30000–30035 / 9000001）：到达 / 开宝箱 / 杀怪 /
             技能精通。仅检查洛萨王城（Map202/203/204）与黑帆窟港（Map401/402）；按 GameMode /
             TaskChain / 文案确定具体范围。地图 Tag 按模式矩阵核对 MapData（Hierarchy 导出）；杀怪与技能只验配置表是否存在。
+            启动或静默同步后会自动检查，并把任务/Condition 缺字段一并列入结果。
           </p>
         </div>
         <div className="task-map-check-actions">

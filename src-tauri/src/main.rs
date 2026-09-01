@@ -192,13 +192,19 @@ struct AppConfig {
     #[serde(default)]
     hidden_task_columns: Vec<String>,
     #[serde(default)]
+    hidden_chest_columns: Vec<String>,
+    #[serde(default)]
     freeze_through_item_header: Option<String>,
     #[serde(default)]
     freeze_through_task_header: Option<String>,
     #[serde(default)]
+    freeze_through_chest_header: Option<String>,
+    #[serde(default)]
     item_table_filter: Option<ItemTableFilter>,
     #[serde(default)]
     task_table_filter: Option<TaskTableFilter>,
+    #[serde(default)]
+    chest_table_filter: Option<ItemTableFilter>,
     #[serde(default)]
     saved_snapshots: Vec<SavedSnapshot>,
     #[serde(default)]
@@ -219,6 +225,10 @@ struct AppConfig {
     sidebar_item_card_color_override: Option<String>,
     #[serde(default)]
     sidebar_task_card_color_override: Option<String>,
+    #[serde(default = "default_sidebar_chest_card_color")]
+    sidebar_chest_card_color: String,
+    #[serde(default)]
+    sidebar_chest_card_color_override: Option<String>,
     #[serde(default)]
     sidebar_template_order: Option<Vec<String>>,
     #[serde(default)]
@@ -352,6 +362,10 @@ fn default_sidebar_rank_up_card_color() -> String {
     "#c9a227".to_string()
 }
 
+fn default_sidebar_chest_card_color() -> String {
+    "#0d9488".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -360,10 +374,13 @@ impl Default for AppConfig {
             item_remark_column: None,
             hidden_item_columns: Vec::new(),
             hidden_task_columns: Vec::new(),
+            hidden_chest_columns: Vec::new(),
             freeze_through_item_header: None,
             freeze_through_task_header: None,
+            freeze_through_chest_header: None,
             item_table_filter: None,
             task_table_filter: None,
+            chest_table_filter: None,
             saved_snapshots: Vec::new(),
             send_templates: Vec::new(),
             saved_templates: Vec::new(),
@@ -374,6 +391,8 @@ impl Default for AppConfig {
             sidebar_rank_up_card_color: default_sidebar_rank_up_card_color(),
             sidebar_item_card_color_override: None,
             sidebar_task_card_color_override: None,
+            sidebar_chest_card_color: default_sidebar_chest_card_color(),
+            sidebar_chest_card_color_override: None,
             sidebar_template_order: None,
             sidebar_card_order: None,
             sidebar_card_hidden: None,
@@ -523,6 +542,16 @@ fn save_task_table_filter(
 }
 
 #[tauri::command]
+fn save_chest_table_filter(
+    app: tauri::AppHandle,
+    filter: Option<ItemTableFilter>,
+) -> Result<(), String> {
+    let mut config = load_config(app.clone())?;
+    config.chest_table_filter = filter;
+    save_config(app, config)
+}
+
+#[tauri::command]
 fn read_file_base64(path: String) -> Result<String, String> {
     let bytes = std::fs::read(&path).map_err(|e| format!("读取失败: {e}"))?;
     Ok(STANDARD.encode(&bytes))
@@ -534,6 +563,9 @@ struct ExcelWorkspaceMtimeFingerprint {
     item: u64,
     mission: u64,
     account: u64,
+    chest: u64,
+    task_csv: u64,
+    condition_csv: u64,
 }
 
 fn file_mtime_ms(path: &Path) -> u64 {
@@ -560,6 +592,10 @@ fn excel_workspace_mtime_fingerprint(root: String) -> Result<ExcelWorkspaceMtime
         item: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Item.xlsx"])),
         mission: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Mission.xlsx"])),
         account: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Account.xlsx"])),
+        chest: file_mtime_ms(&excel_workspace_path(root, &["Excel", "Chest.xlsx"])),
+        task_csv: file_mtime_ms(&excel_workspace_path(root, &["Config", "task.csv"]))
+            .max(file_mtime_ms(&excel_workspace_path(root, &["Config", "Task.csv"]))),
+        condition_csv: file_mtime_ms(&excel_workspace_path(root, &["Config", "Condition.csv"])),
     })
 }
 
@@ -674,6 +710,7 @@ fn main() {
             save_config,
             save_item_table_filter,
             save_task_table_filter,
+            save_chest_table_filter,
             read_file_base64,
             excel_workspace_mtime_fingerprint,
             write_file_base64,

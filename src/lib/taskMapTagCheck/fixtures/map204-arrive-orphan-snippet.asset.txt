@@ -1,0 +1,9 @@
+  MapChestBoxRecords:
+  MapLootRecords:
+  MapTriggerRecords:
+  - triggerTags:
+    - TriggerTag: 103802
+    Position: {x: 100, y: -50, z: 200}
+  RoomLvlUpInfos:
+  - RoomId: 99001
+    Position: {x: 500, y: 0, z: 500}

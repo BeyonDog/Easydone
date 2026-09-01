@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FilterChipRowShell, PinnedMoreChipRow } from "./FilterChipBarShared";
+import { formatCustomKeywordChipLabel, formatCustomKeywordChipTitle } from "./lib/xlsxHelpers";
 
 export type TaskFilterChipBarProps = {
   onRestoreDefaultTaskCsv?: () => void;
@@ -139,6 +140,8 @@ export function TaskFilterChipBar({
             onToggle={onToggleCustomKeyword}
             onReorderBar={onReorderCustomKeywordPinned}
             onDemoteKey={onDemoteCustomKeyword}
+            formatLabel={formatCustomKeywordChipLabel}
+            formatTitle={formatCustomKeywordChipTitle}
             moreOpen={customMoreOpen}
             setMoreOpen={setCustomMoreOpen}
             moreRef={customMoreRef}

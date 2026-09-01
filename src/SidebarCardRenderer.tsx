@@ -3,15 +3,19 @@ import type { ActiveView, AppConfig, SendTemplateItem } from "./types.ts";
 import type { SidebarCardDescriptor } from "./lib/sidebarCardRegistry.ts";
 import {
   SIDEBAR_PINNED_ADD_EXP,
+  SIDEBAR_PINNED_CLASS_LOADOUT,
   SIDEBAR_PINNED_ADD_SPROUT,
+  SIDEBAR_PINNED_CHEST,
   SIDEBAR_PINNED_ITEM,
   SIDEBAR_PINNED_RANK_UP,
   SIDEBAR_PINNED_RESET_MATCH,
   SIDEBAR_PINNED_TASK,
+  SIDEBAR_PINNED_TASK_ISSUES,
   SIDEBAR_PINNED_UPLOAD_CONFIG,
   SIDEBAR_PINNED_TASK_MAP_CHECK,
 } from "./lib/sidebarCardRegistry.ts";
 import {
+  resolvePinnedChestCardColor,
   resolvePinnedItemCardColor,
   resolvePinnedTaskCardColor,
   resolveTemplateCardColor,
@@ -21,6 +25,7 @@ import {
   sidebarResetMatchDefaultColor,
   sidebarSproutDefaultColor,
   sidebarUploadConfigDefaultColor,
+  sidebarTaskIssuesDefaultColor,
   sidebarTaskMapCheckDefaultColor,
 } from "./lib/sidebarCardColor.ts";
 import { formatSidebarCardCreatedAt } from "./lib/formatSidebarCardCreatedAt.ts";
@@ -37,6 +42,7 @@ export type SidebarCardRendererProps = {
   addExpAccent: string;
   addExpPresetBusy?: boolean;
   rankUpAccent: string;
+  classLoadoutAccent: string;
   sproutAccent: string;
   addSproutBusy?: boolean;
   resetMatchAccent: string;
@@ -45,15 +51,19 @@ export type SidebarCardRendererProps = {
   uploadConfigBusy?: boolean;
   taskMapCheckAccent: string;
   taskMapCheckBusy?: boolean;
+  taskIssueAlertActive?: boolean;
   serverWideSendEnabled?: boolean;
   templateDropHoverId?: string | null;
   templateDropRejectId?: string | null;
   onSelectItem: () => void;
+  onSelectChest: () => void;
   onSelectTask: () => void;
   onSelectAddExp: () => void;
   onSelectRankUp: () => void;
+  onSelectClassLoadout: () => void;
   onSelectUploadConfig: () => void;
   onSelectTaskMapCheck: () => void;
+  onSelectTaskIssues: () => void;
   onSelectTemplate: (id: string) => void;
   onAddExpPresetMaxLevel?: () => void;
   onAddExpPresetRich?: () => void;
@@ -70,7 +80,7 @@ export type SidebarCardRendererProps = {
   onCompleteTaskFromTemplate?: (templateId: string) => void;
   onAcceptTasksFromTemplate?: (templateId: string) => void;
   onTemplateDelete: (id: string, title: string) => void;
-  onPinnedContextMenu?: (pin: "item" | "task", x: number, y: number) => void;
+  onPinnedContextMenu?: (pin: "item" | "task" | "chest", x: number, y: number) => void;
   onTemplateContextMenu?: (id: string, title: string, x: number, y: number) => void;
   onCardMainPanelClick?: () => void;
 };
@@ -80,6 +90,7 @@ function cardAccent(
   descriptor: SidebarCardDescriptor,
   addExpAccent: string,
   rankUpAccent: string,
+  classLoadoutAccent: string,
   sproutAccent: string,
   resetMatchAccent: string,
   uploadConfigAccent: string,
@@ -91,12 +102,16 @@ function cardAccent(
   switch (descriptor.id) {
     case SIDEBAR_PINNED_ITEM:
       return resolvePinnedItemCardColor(config);
+    case SIDEBAR_PINNED_CHEST:
+      return resolvePinnedChestCardColor(config);
     case SIDEBAR_PINNED_TASK:
       return resolvePinnedTaskCardColor(config);
     case SIDEBAR_PINNED_ADD_EXP:
       return addExpAccent || sidebarAddExpDefaultColor(config);
     case SIDEBAR_PINNED_RANK_UP:
       return rankUpAccent || sidebarRankUpDefaultColor(config);
+    case SIDEBAR_PINNED_CLASS_LOADOUT:
+      return classLoadoutAccent;
     case SIDEBAR_PINNED_ADD_SPROUT:
       return sproutAccent || sidebarSproutDefaultColor();
     case SIDEBAR_PINNED_RESET_MATCH:
@@ -105,6 +120,8 @@ function cardAccent(
       return uploadConfigAccent || sidebarUploadConfigDefaultColor();
     case SIDEBAR_PINNED_TASK_MAP_CHECK:
       return taskMapCheckAccent || sidebarTaskMapCheckDefaultColor();
+    case SIDEBAR_PINNED_TASK_ISSUES:
+      return sidebarTaskIssuesDefaultColor();
     default:
       return resolvePinnedItemCardColor(config);
   }
@@ -120,16 +137,22 @@ function isCardActive(activeView: ActiveView, descriptor: SidebarCardDescriptor)
   switch (descriptor.id) {
     case SIDEBAR_PINNED_ITEM:
       return activeView.kind === "item";
+    case SIDEBAR_PINNED_CHEST:
+      return activeView.kind === "chest";
     case SIDEBAR_PINNED_TASK:
       return activeView.kind === "task";
     case SIDEBAR_PINNED_ADD_EXP:
       return activeView.kind === "addExp";
     case SIDEBAR_PINNED_RANK_UP:
       return activeView.kind === "rankUp";
+    case SIDEBAR_PINNED_CLASS_LOADOUT:
+      return activeView.kind === "classLoadout";
     case SIDEBAR_PINNED_UPLOAD_CONFIG:
       return activeView.kind === "uploadConfig";
     case SIDEBAR_PINNED_TASK_MAP_CHECK:
       return activeView.kind === "taskMapCheck";
+    case SIDEBAR_PINNED_TASK_ISSUES:
+      return activeView.kind === "taskIssues";
     default:
       return false;
   }
@@ -147,6 +170,7 @@ export function SidebarCardRenderer({
   addExpAccent,
   addExpPresetBusy = false,
   rankUpAccent,
+  classLoadoutAccent,
   sproutAccent,
   addSproutBusy = false,
   resetMatchAccent,
@@ -155,15 +179,19 @@ export function SidebarCardRenderer({
   uploadConfigBusy = false,
   taskMapCheckAccent,
   taskMapCheckBusy: _taskMapCheckBusy = false,
+  taskIssueAlertActive = false,
   serverWideSendEnabled = false,
   templateDropHoverId = null,
   templateDropRejectId = null,
   onSelectItem,
+  onSelectChest,
   onSelectTask,
   onSelectAddExp,
   onSelectRankUp,
+  onSelectClassLoadout,
   onSelectUploadConfig,
   onSelectTaskMapCheck,
+  onSelectTaskIssues,
   onSelectTemplate,
   onAddExpPresetMaxLevel,
   onAddExpPresetRich,
@@ -189,6 +217,7 @@ export function SidebarCardRenderer({
     descriptor,
     addExpAccent,
     rankUpAccent,
+    classLoadoutAccent,
     sproutAccent,
     resetMatchAccent,
     uploadConfigAccent,
@@ -210,6 +239,10 @@ export function SidebarCardRenderer({
         onSelectItem();
         onCardMainPanelClick?.();
         break;
+      case SIDEBAR_PINNED_CHEST:
+        onSelectChest();
+        onCardMainPanelClick?.();
+        break;
       case SIDEBAR_PINNED_TASK:
         onSelectTask();
         onCardMainPanelClick?.();
@@ -222,12 +255,20 @@ export function SidebarCardRenderer({
         onSelectRankUp();
         onCardMainPanelClick?.();
         break;
+      case SIDEBAR_PINNED_CLASS_LOADOUT:
+        onSelectClassLoadout();
+        onCardMainPanelClick?.();
+        break;
       case SIDEBAR_PINNED_UPLOAD_CONFIG:
         onSelectUploadConfig();
         onCardMainPanelClick?.();
         break;
       case SIDEBAR_PINNED_TASK_MAP_CHECK:
         onSelectTaskMapCheck();
+        onCardMainPanelClick?.();
+        break;
+      case SIDEBAR_PINNED_TASK_ISSUES:
+        onSelectTaskIssues();
         onCardMainPanelClick?.();
         break;
       default:
@@ -397,10 +438,36 @@ export function SidebarCardRenderer({
     );
   }
 
-  if (pinned === SIDEBAR_PINNED_TASK) {
+  if (pinned === SIDEBAR_PINNED_CHEST) {
     return (
       <div
-        className={`card card--sidebar card--sidebar-pinned card--sidebar-task-pinned${onCompleteNextTaskFromPinned ? " card--sidebar-with-actions" : ""}${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        className={`card card--sidebar card--sidebar-pinned${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        style={sidebarCardAccentStyleObj(accent)}
+        onClick={handleMainClick}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onPinnedContextMenu?.("chest", e.clientX, e.clientY);
+        }}
+      >
+        {visibilityToggle ? (
+          <div className="sidebar-card-gallery-controls" onClick={(e) => e.stopPropagation()}>
+            {visibilityToggle}
+            {dragHandle}
+          </div>
+        ) : dragHandle ? (
+          <div className="sidebar-card-drag-row">{dragHandle}</div>
+        ) : null}
+        <div className="card-title">{descriptor.title}</div>
+      </div>
+    );
+  }
+
+  if (pinned === SIDEBAR_PINNED_TASK) {
+    const healthLabel = taskIssueAlertActive ? "检查异常" : "暂无异常";
+    return (
+      <div
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-task-pinned card--sidebar-with-actions${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
         style={sidebarCardAccentStyleObj(accent)}
         onClick={handleMainClick}
         onContextMenu={(e) => {
@@ -417,26 +484,33 @@ export function SidebarCardRenderer({
         ) : dragHandle ? (
           <div className="sidebar-card-drag-row">{dragHandle}</div>
         ) : null}
-        {onCompleteNextTaskFromPinned ? (
-          <>
-            <div
-              className="card-template-actions card-template-actions--grid card-template-actions--task"
-              onClick={(e) => e.stopPropagation()}
+        <div
+          className="card-template-actions card-template-actions--grid card-template-actions--task"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={`btn btn-tiny card-template-action sidebar-card-health-btn${taskIssueAlertActive ? " sidebar-card-health-btn--alert" : " sidebar-card-health-btn--ok"}`}
+            title={healthLabel}
+            aria-label={healthLabel}
+            onClick={() => onSelectTaskIssues()}
+            disabled={filterSheetOpen}
+          >
+            {healthLabel}
+          </button>
+          {onCompleteNextTaskFromPinned ? (
+            <button
+              type="button"
+              className="btn btn-tiny card-template-action card-template-action--head"
+              onClick={() => onCompleteNextTaskFromPinned()}
             >
-              <span className="card-template-action-spacer" aria-hidden />
-              <button
-                type="button"
-                className="btn btn-tiny card-template-action card-template-action--head"
-                onClick={() => onCompleteNextTaskFromPinned()}
-              >
-                完成已勾选
-              </button>
-            </div>
-            <div className="card-title">{descriptor.title}</div>
-          </>
-        ) : (
-          <div className="card-title">{descriptor.title}</div>
-        )}
+              完成已勾选
+            </button>
+          ) : (
+            <span className="card-template-action-spacer" aria-hidden />
+          )}
+        </div>
+        <div className="card-title">{descriptor.title}</div>
       </div>
     );
   }
@@ -494,6 +568,26 @@ export function SidebarCardRenderer({
     return (
       <div
         className={`card card--sidebar card--sidebar-pinned card--sidebar-rank-up${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        style={sidebarCardAccentStyleObj(accent)}
+        onClick={handleMainClick}
+      >
+        {visibilityToggle ? (
+          <div className="sidebar-card-gallery-controls" onClick={(e) => e.stopPropagation()}>
+            {visibilityToggle}
+            {dragHandle}
+          </div>
+        ) : dragHandle ? (
+          <div className="sidebar-card-drag-row">{dragHandle}</div>
+        ) : null}
+        <div className="card-title">{descriptor.title}</div>
+      </div>
+    );
+  }
+
+  if (pinned === SIDEBAR_PINNED_CLASS_LOADOUT) {
+    return (
+      <div
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-class-loadout${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
         style={sidebarCardAccentStyleObj(accent)}
         onClick={handleMainClick}
       >
@@ -610,6 +704,26 @@ export function SidebarCardRenderer({
             恢复配置
           </button>
         </div>
+        <div className="card-title">{descriptor.title}</div>
+      </div>
+    );
+  }
+
+  if (pinned === SIDEBAR_PINNED_TASK_ISSUES) {
+    return (
+      <div
+        className={`card card--sidebar card--sidebar-pinned card--sidebar-task-issues${isActive ? " active" : ""}${modeClass}${hiddenClass}`}
+        style={sidebarCardAccentStyleObj(accent)}
+        onClick={handleMainClick}
+      >
+        {visibilityToggle ? (
+          <div className="sidebar-card-gallery-controls" onClick={(e) => e.stopPropagation()}>
+            {visibilityToggle}
+            {dragHandle}
+          </div>
+        ) : dragHandle ? (
+          <div className="sidebar-card-drag-row">{dragHandle}</div>
+        ) : null}
         <div className="card-title">{descriptor.title}</div>
       </div>
     );

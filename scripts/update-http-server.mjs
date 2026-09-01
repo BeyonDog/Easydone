@@ -49,7 +49,14 @@ const server = http.createServer((req, res) => {
   }
 
   const ext = path.extname(filePath);
-  res.writeHead(200, { "Content-Type": mime[ext] || "application/octet-stream" });
+  const headers = {
+    "Content-Type": mime[ext] || "application/octet-stream",
+  };
+  if (ext === ".json" || ext === ".exe" || ext === ".sig") {
+    headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+    headers.Pragma = "no-cache";
+  }
+  res.writeHead(200, headers);
   fs.createReadStream(filePath).pipe(res);
 });
 

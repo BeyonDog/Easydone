@@ -3,9 +3,12 @@ import { mergeSidebarTemplateOrder } from "./sidebarCardColor.ts";
 import { resolveSidebarCardOrder, isSidebarCardHidden } from "./sidebarCardLayout.ts";
 
 export const SIDEBAR_PINNED_ITEM = "pinned:item";
+export const SIDEBAR_PINNED_CHEST = "pinned:chest";
 export const SIDEBAR_PINNED_TASK = "pinned:task";
+export const SIDEBAR_PINNED_TASK_ISSUES = "pinned:taskIssues";
 export const SIDEBAR_PINNED_ADD_EXP = "pinned:addExp";
 export const SIDEBAR_PINNED_RANK_UP = "pinned:rankUp";
+export const SIDEBAR_PINNED_CLASS_LOADOUT = "pinned:classLoadout";
 export const SIDEBAR_PINNED_ADD_SPROUT = "pinned:addSprout";
 export const SIDEBAR_PINNED_RESET_MATCH = "pinned:resetMatch";
 export const SIDEBAR_PINNED_UPLOAD_CONFIG = "pinned:uploadConfig";
@@ -20,11 +23,25 @@ export const SIDEBAR_PINNED_DEFS = [
     pin: "item" as const,
   },
   {
+    id: SIDEBAR_PINNED_CHEST,
+    title: "全部宝箱/礼包",
+    searchKeywords: ["宝箱", "礼包", "chest", "bundle"],
+    hasMainPanel: true,
+    pin: "chest" as const,
+  },
+  {
     id: SIDEBAR_PINNED_TASK,
     title: "全部任务",
     searchKeywords: ["任务", "task"],
     hasMainPanel: true,
     pin: "task" as const,
+  },
+  {
+    id: SIDEBAR_PINNED_TASK_ISSUES,
+    title: "任务异常",
+    searchKeywords: ["异常", "检查", "issue", "任务"],
+    hasMainPanel: true,
+    pin: null,
   },
   {
     id: SIDEBAR_PINNED_ADD_EXP,
@@ -37,6 +54,13 @@ export const SIDEBAR_PINNED_DEFS = [
     id: SIDEBAR_PINNED_RANK_UP,
     title: "升段位",
     searchKeywords: ["段位", "rank", "升段", "段位分"],
+    hasMainPanel: true,
+    pin: null,
+  },
+  {
+    id: SIDEBAR_PINNED_CLASS_LOADOUT,
+    title: "职业出装",
+    searchKeywords: ["职业", "出装", "class", "loadout"],
     hasMainPanel: true,
     pin: null,
   },
@@ -88,7 +112,7 @@ export type SidebarCardDescriptor =
       searchKeywords: string[];
       hasMainPanel: boolean;
       hidden: boolean;
-      pin: "item" | "task" | null;
+      pin: "item" | "task" | "chest" | null;
     }
   | {
       id: string;

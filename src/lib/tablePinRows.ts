@@ -1,4 +1,4 @@
-export type PinnedRowOrderState = { item: number[]; task: number[] };
+export type PinnedRowOrderState = { item: number[]; task: number[]; chest: number[] };
 
 /** Move toAdd to the front of pinned order (selectionOrder first), keep rest deduped. */
 export function pinSelectionToFront(
@@ -35,13 +35,12 @@ export function pinSelectionToFront(
 /** Pin visible selected rows to front for one table. */
 export function pinVisibleSelectionToFront(
   pinned: PinnedRowOrderState,
-  table: "item" | "task",
+  table: "item" | "task" | "chest",
   visibleSelectedIdxs: number[],
   selectionOrder: number[],
 ): PinnedRowOrderState {
   if (visibleSelectedIdxs.length === 0) return pinned;
-  const key = table === "item" ? "item" : "task";
-  return { ...pinned, [key]: pinSelectionToFront(pinned[key], visibleSelectedIdxs, selectionOrder) };
+  return { ...pinned, [table]: pinSelectionToFront(pinned[table], visibleSelectedIdxs, selectionOrder) };
 }
 
 /** Merge newly pinned dataIdxs into existing order; selectionOrder determines append order among toAdd. */

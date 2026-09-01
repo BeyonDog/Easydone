@@ -109,5 +109,6 @@ npm.cmd run tauri build
 | 设置/顶栏检查更新报错 | 看中文报错；确认 `start-update-server.bat` 与发版产物 |
 | 发版 GUI 报「发布校验失败」 | 按日志修 HTTP 或 `Update/` 内文件缺失问题后重新发版 |
 | 自动更新报 `different key` | 客户端公钥与发版私钥不一致；用弹窗手动安装链接或内网安装包重装一版；勿无计划 `signer generate -f` |
+| 更新到新版后重启又变回旧版本 | 多为双份安装/旧快捷方式，或浏览器缓存了旧安装包；见 [使用说明.md](docs/使用说明.md) §17.3 |
 | 凭据备份 push 失败 | 配置 `GITHUB_TOKEN` / `github.token`；确认对 easydoneKey 有写权限；日志见 `Update/publish-gui.log` |
 | 发版报「禁止换钥」/ signing-guard 失败 | 恢复 `tauri.conf` 的 `pubkey` 与 `keys/signing-key.lock.json`、`easydone-updater.key.pub` 一致；勿改 lock；确认真私钥未丢 |

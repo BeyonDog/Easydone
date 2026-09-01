@@ -1,5 +1,16 @@
 const DEFAULT_PADDING = 8;
 
+export type MenuPosition = { x: number; y: number };
+
+export function menuPositionsEqual(
+  a: MenuPosition | null | undefined,
+  b: MenuPosition | null | undefined,
+): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return a.x === b.x && a.y === b.y;
+}
+
 export function clampMenuPosition(
   x: number,
   y: number,

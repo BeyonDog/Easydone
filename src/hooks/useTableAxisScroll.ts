@@ -10,6 +10,7 @@ import {
   clampScrollLeft,
   computeMaxScrollLeft,
   isHorizontalDominantWheel,
+  resolveHorizontalOverflowVisible,
   resolveHorizontalWheelDelta,
 } from "../lib/tableAxisScroll.ts";
 
@@ -42,7 +43,9 @@ export function useTableAxisScroll({
   const tableScrollContentRef = useRef<HTMLDivElement | null>(null);
   const scrollLeftRef = useRef(0);
   const contentWidthRef = useRef(0);
+  const hasHorizontalOverflowRef = useRef(false);
   const syncingBarRef = useRef(false);
+  const syncRafRef = useRef(0);
   const [scrollLeft, setScrollLeftState] = useState(0);
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
 
@@ -63,6 +66,13 @@ export function useTableAxisScroll({
     syncingBarRef.current = true;
     bar.scrollLeft = left;
     syncingBarRef.current = false;
+  }, []);
+
+  const updateHorizontalOverflow = useCallback((maxLeft: number) => {
+    const next = resolveHorizontalOverflowVisible(maxLeft, hasHorizontalOverflowRef.current);
+    if (next === hasHorizontalOverflowRef.current) return;
+    hasHorizontalOverflowRef.current = next;
+    setHasHorizontalOverflow(next);
   }, []);
 
   const applyScrollLeft = useCallback(
@@ -87,53 +97,70 @@ export function useTableAxisScroll({
     if (!table || !spacer) return;
 
     const contentWidth = readContentWidth(table, content);
+    const prevWidth = contentWidthRef.current;
     contentWidthRef.current = contentWidth;
-    spacer.style.width = `${contentWidth}px`;
+    if (contentWidth !== prevWidth) {
+      spacer.style.width = `${contentWidth}px`;
+    }
 
     const maxLeft = computeMaxScrollLeft(contentWidth, readViewportWidth());
-    setHasHorizontalOverflow(maxLeft > 0);
+    updateHorizontalOverflow(maxLeft);
     applyScrollLeft(scrollLeftRef.current);
-  }, [applyScrollLeft, readViewportWidth, tableRef]);
+  }, [applyScrollLeft, readViewportWidth, tableRef, updateHorizontalOverflow]);
 
   const syncViewportScrollLeft = useCallback(() => {
     const maxLeft = computeMaxScrollLeft(contentWidthRef.current, readViewportWidth());
-    setHasHorizontalOverflow(maxLeft > 0);
+    updateHorizontalOverflow(maxLeft);
     const clamped = clampScrollLeft(scrollLeftRef.current, maxLeft);
     if (clamped === scrollLeftRef.current) return;
     scrollLeftRef.current = clamped;
     setScrollLeftState(clamped);
     syncBarScrollLeft(clamped);
-  }, [readViewportWidth, syncBarScrollLeft]);
+  }, [readViewportWidth, syncBarScrollLeft, updateHorizontalOverflow]);
+
+  const runLayoutSync = useCallback(() => {
+    syncContentWidth();
+    syncViewportScrollLeft();
+  }, [syncContentWidth, syncViewportScrollLeft]);
+
+  const scheduleLayoutSync = useCallback(() => {
+    if (syncRafRef.current) return;
+    syncRafRef.current = requestAnimationFrame(() => {
+      syncRafRef.current = 0;
+      runLayoutSync();
+    });
+  }, [runLayoutSync]);
 
   useLayoutEffect(() => {
-    syncContentWidth();
+    runLayoutSync();
     const table = tableRef.current;
     const content = tableScrollContentRef.current;
     const body = tableScrollBodyRef.current;
     const shell = shellRef?.current ?? null;
     const viewport = body?.parentElement ?? null;
 
-    const contentRo = new ResizeObserver(() => syncContentWidth());
-    if (table) contentRo.observe(table);
-    if (content) contentRo.observe(content);
-
-    const viewportRo = new ResizeObserver(() => syncViewportScrollLeft());
-    if (body) viewportRo.observe(body);
-    if (viewport) viewportRo.observe(viewport);
-    if (shell) viewportRo.observe(shell);
+    const ro = new ResizeObserver(() => scheduleLayoutSync());
+    if (table) ro.observe(table);
+    if (content) ro.observe(content);
+    if (body) ro.observe(body);
+    if (viewport) ro.observe(viewport);
+    if (shell) ro.observe(shell);
 
     let rafOuter = 0;
     let rafInner = 0;
     rafOuter = requestAnimationFrame(() => {
-      rafInner = requestAnimationFrame(() => syncContentWidth());
+      rafInner = requestAnimationFrame(() => runLayoutSync());
     });
     return () => {
       cancelAnimationFrame(rafOuter);
       cancelAnimationFrame(rafInner);
-      contentRo.disconnect();
-      viewportRo.disconnect();
+      if (syncRafRef.current) {
+        cancelAnimationFrame(syncRafRef.current);
+        syncRafRef.current = 0;
+      }
+      ro.disconnect();
     };
-  }, [tableRef, shellRef, syncContentWidth, syncViewportScrollLeft, layoutSeq, contentSeq]);
+  }, [tableRef, shellRef, runLayoutSync, scheduleLayoutSync, layoutSeq, contentSeq]);
 
   const onHorizontalBarScroll = useCallback(() => {
     if (syncingBarRef.current) return;

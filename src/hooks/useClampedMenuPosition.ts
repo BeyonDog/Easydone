@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } from "react";
-import { clampMenuPosition } from "../lib/clampMenuPosition.ts";
+import { clampMenuPosition, menuPositionsEqual } from "../lib/clampMenuPosition.ts";
 
 export function useClampedMenuPosition(
   anchor: { x: number; y: number } | null,
@@ -13,30 +13,32 @@ export function useClampedMenuPosition(
 
   const applyClamp = useCallback(() => {
     if (anchorX == null || anchorY == null) {
-      setPosition(null);
+      setPosition((prev) => (prev === null ? prev : null));
       return;
     }
     const el = menuRef.current;
     if (!el) {
-      setPosition({ x: anchorX, y: anchorY });
+      setPosition((prev) => {
+        const next = { x: anchorX, y: anchorY };
+        return menuPositionsEqual(prev, next) ? prev : next;
+      });
       return;
     }
     const rect = el.getBoundingClientRect();
-    setPosition(
-      clampMenuPosition(
-        anchorX,
-        anchorY,
-        rect.width,
-        rect.height,
-        window.innerWidth,
-        window.innerHeight,
-      ),
+    const next = clampMenuPosition(
+      anchorX,
+      anchorY,
+      rect.width,
+      rect.height,
+      window.innerWidth,
+      window.innerHeight,
     );
+    setPosition((prev) => (menuPositionsEqual(prev, next) ? prev : next));
   }, [anchorX, anchorY, menuRef]);
 
   useLayoutEffect(() => {
     if (anchorX == null || anchorY == null) {
-      setPosition(null);
+      setPosition((prev) => (prev === null ? prev : null));
       return;
     }
     applyClamp();
@@ -46,10 +48,8 @@ export function useClampedMenuPosition(
     if (anchorX == null || anchorY == null) return;
     const onReflow = () => applyClamp();
     window.addEventListener("resize", onReflow);
-    window.addEventListener("scroll", onReflow, true);
     return () => {
       window.removeEventListener("resize", onReflow);
-      window.removeEventListener("scroll", onReflow, true);
     };
   }, [anchorX, anchorY, applyClamp]);
 

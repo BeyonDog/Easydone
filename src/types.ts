@@ -139,10 +139,15 @@ export interface AppConfig {
   itemRemarkColumn: string | null;
   hiddenItemColumns: string[];
   hiddenTaskColumns: string[];
+  /** 全部宝箱/礼包表隐藏列 */
+  hiddenChestColumns?: string[];
   freezeThroughItemHeader: string | null;
   freezeThroughTaskHeader: string | null;
+  freezeThroughChestHeader?: string | null;
   itemTableFilter: ItemTableFilter | null;
   taskTableFilter: TaskTableFilter | null;
+  /** 全部宝箱/礼包表筛选（与道具筛选同结构） */
+  chestTableFilter?: ItemTableFilter | null;
   /** @deprecated 迁移后为空 */
   savedSnapshots: SavedSnapshot[];
   /** @deprecated 迁移后为空 */
@@ -160,6 +165,10 @@ export interface AppConfig {
   sidebarItemCardColorOverride?: string | null;
   /** 全部任务卡片单独覆盖色 */
   sidebarTaskCardColorOverride?: string | null;
+  /** 侧栏默认宝箱/礼包卡片色 */
+  sidebarChestCardColor?: string | null;
+  /** 全部宝箱/礼包卡片单独覆盖色 */
+  sidebarChestCardColorOverride?: string | null;
   /** 模板卡片 id 顺序；与 sidebarCardOrder 中 template 子序列同步 */
   sidebarTemplateOrder?: string[] | null;
   /** 侧栏全部卡片（固定卡 + 模板）全局顺序 */
@@ -175,7 +184,7 @@ export interface AppConfig {
   initialItemFilterSheetShown: boolean;
   initialTaskFilterSheetShown: boolean;
   gmtPlatform: "overseas" | "cn";
-  /** 海外 PreLive（PR）模式：走 pre-krad / PreLive-SG */
+  /** 海外 PreLive（PR）模式：走 pre-krad，可选 PR 区服名单 */
   gmtPreliveEnabled: boolean;
   gmtBaseUrl: string;
   gmtCookie: string;
@@ -216,11 +225,14 @@ export interface AppConfig {
 
 export type ActiveView =
   | { kind: "item" }
+  | { kind: "chest" }
   | { kind: "task" }
   | { kind: "addExp" }
   | { kind: "rankUp" }
   | { kind: "uploadConfig" }
   | { kind: "taskMapCheck" }
+  | { kind: "taskIssues" }
+  | { kind: "classLoadout" }
   | { kind: "template"; id: string }
   /** @deprecated 读盘后转为 template */
   | { kind: "snapshot"; id: string };

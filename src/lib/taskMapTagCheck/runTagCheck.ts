@@ -5,7 +5,8 @@ import {
   parseTaskCsvForConditions,
   parseTaskMetaById,
 } from "./parseConditions.ts";
-import { countTagInMapData, mapDataHasTag, parseMapDataAsset } from "./parseMapDataAsset.ts";
+import { countTagInMapData, DEFAULT_NEARBY_RADIUS_M, findNearbyRecordsMissingTag, findTagRecords, mapDataHasTag, nearestRoomDistance, parseMapDataAsset } from "./parseMapDataAsset.ts";
+import { ROOM_ANCHOR_MAX_DIST_M } from "./constants.ts";
 import { resolveMapScopeForCondition } from "./resolveMapScope.ts";
 import {
   buildMapVariants,
@@ -108,19 +109,29 @@ function checkConfigTargets(input: RunTagCheckInput, condition: TaskMapCondition
   const monster = input.monsterCatalog;
   const skills = input.skillIds;
   const masteries = input.masteryIds;
+  const mapFileNames = Object.keys(input.mapDataByFileName ?? {});
+  const hasMapData = mapFileNames.length > 0;
 
   for (const t of condition.configTargets) {
     let ok = true;
     if (t.kind === "monster_id") ok = monster ? monster.ids.has(t.value) : true;
     else if (t.kind === "monster_type") ok = monster ? monster.types.has(t.value) : true;
     else if (t.kind === "monster_group") ok = monster ? monster.groups.has(t.value) : true;
-    else if (t.kind === "monster_tag") ok = monster ? monster.tags.has(t.value) : true;
-    else if (t.kind === "skill_id") ok = skills ? skills.has(t.value) : true;
+    else if (t.kind === "monster_tag") {
+      // InstTags live on MapMonsterRecords, not MonsterBase.TagGroup
+      if (!hasMapData) continue;
+      ok = mapFileNames.some((fileName) => {
+        const text = input.mapDataByFileName[fileName];
+        if (!text) return false;
+        const parsed = parseMapDataAsset(text, fileName);
+        return mapDataHasTag(parsed, t.value, "kill");
+      });
+    } else if (t.kind === "skill_id") ok = skills ? skills.has(t.value) : true;
     else if (t.kind === "mastery_id") ok = masteries ? masteries.has(t.value) : true;
 
     // If catalog not loaded, skip (avoid false positives)
     if (
-      (t.kind.startsWith("monster") && !monster) ||
+      ((t.kind === "monster_id" || t.kind === "monster_type" || t.kind === "monster_group") && !monster) ||
       (t.kind === "skill_id" && !skills) ||
       (t.kind === "mastery_id" && !masteries)
     ) {
@@ -128,12 +139,13 @@ function checkConfigTargets(input: RunTagCheckInput, condition: TaskMapCondition
     }
 
     if (!ok) {
+      const missingWhere = t.kind === "monster_tag" ? "MapData 缺少" : "配置表缺少";
       issues.push({
         ...emptyIssueBase(condition),
         severity: "error",
         kind: "config_missing",
         targetTag: t.value,
-        message: `配置表缺少 ${configTargetLabel(t)}（任务 ${condition.taskIds[0] ?? "?"} / 条件 ${condition.conditionId}）`,
+        message: `${missingWhere} ${configTargetLabel(t)}（任务 ${condition.taskIds[0] ?? "?"} / 条件 ${condition.conditionId}）`,
       });
     }
   }
@@ -254,9 +266,13 @@ export function runTagCheck(input: RunTagCheckInput): TagCheckReport {
         );
       if (legacyOnlyHit) {
         const rep = liveLayers[0]!.layer;
+        const legacyTrigger = available
+          .filter((r) => r.layer.mapId === 202 || r.layer.mapId === 203)
+          .flatMap((r) => findTagRecords(r.parsed, condition.targetTag, mapKind))
+          .find((rec) => rec.position != null);
         issues.push({
           ...emptyIssueBase(condition),
-          severity: "warn",
+          severity: condition.kind === "arrive" ? "error" : "warn",
           kind: "live_layer_missing",
           mapId: rep.mapId,
           mapName: rep.mapName,
@@ -268,6 +284,8 @@ export function runTagCheck(input: RunTagCheckInput): TagCheckReport {
           mapDataFile: rep.mapDataFileName,
           layerFilesChecked: group.layers.map((l) => l.mapDataFileName),
           sceneFile: rep.sceneRelativePath,
+          position: legacyTrigger?.position,
+          recordKind: legacyTrigger?.recordKind,
           highValueZone: "unknown",
           message:
             `Tag ${condition.targetTag} 仅在 legacy 分层(Map202/203)存在，live Map204 缺失（${tierLabel(group.matchTier)} · ${playerLabel(group.playerMode)} · ${terrainLabel(group.terrain)}）`,
@@ -326,6 +344,114 @@ export function runTagCheck(input: RunTagCheckInput): TagCheckReport {
               `Tag ${condition.targetTag} 在 ${group.variantSuffix} 各分层数量不一致：` +
               counts.map((c) => `Map${c.layer.mapId}=${c.count}`).join("，"),
           });
+        }
+      }
+
+      // Orphan arrive trigger: Tag on Map204 but far from any RoomLvlUp anchor
+      if (condition.kind === "arrive" && unionHasTag) {
+        const orphanSeen = new Set<string>();
+        for (const r of available) {
+          if (r.layer.mapId !== 204 && !/Map204/.test(r.layer.sceneBase)) continue;
+          if (r.parsed.roomLvlUpInfosEmpty || r.parsed.roomAnchors.length === 0) continue;
+          for (const rec of findTagRecords(r.parsed, condition.targetTag, "arrive")) {
+            if (!rec.position) continue;
+            const dist = nearestRoomDistance(rec.position, r.parsed.roomAnchors);
+            if (dist == null || dist <= ROOM_ANCHOR_MAX_DIST_M) continue;
+            const posKey = `${rec.position.x.toFixed(2)}|${rec.position.z.toFixed(2)}`;
+            const dedupeKey = `${r.layer.mapDataFileName}|${condition.targetTag}|${posKey}`;
+            if (orphanSeen.has(dedupeKey)) continue;
+            orphanSeen.add(dedupeKey);
+            issues.push({
+              ...emptyIssueBase(condition),
+              severity: "error",
+              kind: "orphan_arrive_trigger",
+              mapId: r.layer.mapId,
+              mapName: r.layer.mapName,
+              variantLabel: r.layer.modeLabel,
+              terrain: group.terrain,
+              playerMode: group.playerMode,
+              matchTier: group.matchTier,
+              variantSuffix: group.variantSuffix,
+              mapDataFile: r.layer.mapDataFileName,
+              layerFilesChecked: group.layers.map((l) => l.mapDataFileName),
+              sceneFile: r.layer.sceneRelativePath,
+              position: rec.position,
+              recordKind: rec.recordKind,
+              highValueZone: "unknown",
+              message:
+                `${r.layer.mapName} · ${tierLabel(group.matchTier)} · ${playerLabel(group.playerMode)} · ${terrainLabel(group.terrain)} · ` +
+                `到达 Trigger ${condition.targetTag} 附近无有效房间（距最近房间 ${dist.toFixed(1)}m，阈值 ${ROOM_ANCHOR_MAX_DIST_M}m）` +
+                `（任务 ${condition.taskIds[0] || "?"} / 条件 ${condition.conditionId}）· ` +
+                `坐标 (${rec.position.x.toFixed(2)}, ${rec.position.y.toFixed(2)}, ${rec.position.z.toFixed(2)})`,
+            });
+          }
+        }
+      }
+
+      // Cross-layer: task interactable present with empty / wrong InstTags near a tagged anchor
+      if (unionHasTag && condition.kind === "chest_tag") {
+        const anchors: Array<{
+          mapId: number;
+          pos: { x: number; y: number; z: number };
+        }> = [];
+        for (const r of available) {
+          for (const rec of findTagRecords(r.parsed, condition.targetTag, mapKind)) {
+            if (!rec.position) continue;
+            anchors.push({ mapId: r.layer.mapId, pos: rec.position });
+          }
+        }
+        const seen = new Set<string>();
+        for (const r of available) {
+          for (const anchor of anchors) {
+            const nearbyMissing = findNearbyRecordsMissingTag(
+              r.parsed,
+              anchor.pos,
+              condition.targetTag,
+              mapKind,
+              DEFAULT_NEARBY_RADIUS_M,
+            );
+            if (nearbyMissing.length === 0) continue;
+            // Slot already has correct tag on this layer → skip other nearby chests
+            const hasCorrectNearby =
+              findTagRecords(r.parsed, condition.targetTag, mapKind).some(
+                (rec) =>
+                  rec.position != null &&
+                  Math.hypot(rec.position.x - anchor.pos.x, rec.position.z - anchor.pos.z) <=
+                    DEFAULT_NEARBY_RADIUS_M,
+              );
+            if (hasCorrectNearby) continue;
+
+            const emptyFirst = nearbyMissing.filter((n) => n.record.tags.length === 0);
+            const toReport = emptyFirst.length > 0 ? emptyFirst : nearbyMissing;
+            for (const hit of toReport) {
+              const pos = hit.record.position!;
+              const key = `${r.layer.mapId}|${pos.x.toFixed(2)}|${pos.z.toFixed(2)}|${condition.targetTag}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const empty = hit.record.tags.length === 0;
+              issues.push({
+                ...emptyIssueBase(condition),
+                severity: "warn",
+                kind: "empty_or_wrong_tag",
+                mapId: r.layer.mapId,
+                mapName: r.layer.mapName,
+                variantLabel: r.layer.modeLabel,
+                terrain: group.terrain,
+                playerMode: group.playerMode,
+                matchTier: group.matchTier,
+                variantSuffix: group.variantSuffix,
+                mapDataFile: r.layer.mapDataFileName,
+                layerFilesChecked: group.layers.map((l) => l.mapDataFileName),
+                sceneFile: r.layer.sceneRelativePath,
+                position: pos,
+                recordKind: hit.record.recordKind,
+                highValueZone: "unknown",
+                message:
+                  `Tag ${condition.targetTag} 在 Map${r.layer.mapId} 同位置交互物${empty ? "未挂 Tag" : `Tag 不含目标（现有 ${hit.record.tags.join(",") || "空"}）`}` +
+                  `（参考 Map${anchor.mapId} · 距 ${hit.distance.toFixed(2)}m）`,
+              });
+            }
+          }
         }
       }
     }

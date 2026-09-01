@@ -1,6 +1,24 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampMenuPosition } from "./clampMenuPosition.ts";
+import { clampMenuPosition, menuPositionsEqual } from "./clampMenuPosition.ts";
+
+describe("menuPositionsEqual", () => {
+  it("returns true for same coordinates", () => {
+    assert.equal(menuPositionsEqual({ x: 10, y: 20 }, { x: 10, y: 20 }), true);
+  });
+
+  it("returns false when coordinates differ", () => {
+    assert.equal(menuPositionsEqual({ x: 10, y: 20 }, { x: 11, y: 20 }), false);
+    assert.equal(menuPositionsEqual({ x: 10, y: 20 }, { x: 10, y: 21 }), false);
+  });
+
+  it("handles nullish", () => {
+    assert.equal(menuPositionsEqual(null, null), true);
+    assert.equal(menuPositionsEqual(undefined, undefined), true);
+    assert.equal(menuPositionsEqual(null, { x: 0, y: 0 }), false);
+    assert.equal(menuPositionsEqual({ x: 0, y: 0 }, null), false);
+  });
+});
 
 describe("clampMenuPosition", () => {
   const vw = 800;

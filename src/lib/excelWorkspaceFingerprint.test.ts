@@ -7,15 +7,12 @@ import {
 } from "./excelWorkspaceFingerprint.ts";
 
 describe("fingerprintsEqual", () => {
-  it("compares item/mission/account mtimes", () => {
-    assert.equal(
-      fingerprintsEqual({ item: 1, mission: 2, account: 3 }, { item: 1, mission: 2, account: 3 }),
-      true,
-    );
-    assert.equal(
-      fingerprintsEqual({ item: 1, mission: 2, account: 3 }, { item: 1, mission: 2, account: 4 }),
-      false,
-    );
+  it("compares item/mission/account/chest/taskCsv/conditionCsv mtimes", () => {
+    const base = { item: 1, mission: 2, account: 3, chest: 4, taskCsv: 5, conditionCsv: 6 };
+    assert.equal(fingerprintsEqual(base, { ...base }), true);
+    assert.equal(fingerprintsEqual(base, { ...base, chest: 5 }), false);
+    assert.equal(fingerprintsEqual(base, { ...base, taskCsv: 9 }), false);
+    assert.equal(fingerprintsEqual(base, { ...base, conditionCsv: 9 }), false);
   });
 });
 

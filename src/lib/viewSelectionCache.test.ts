@@ -5,6 +5,7 @@ import { applySnapshot, snapshotFromSelection, viewSelectionKey } from "./viewSe
 describe("viewSelectionKey", () => {
   it("maps item, task, template, and addExp", () => {
     assert.equal(viewSelectionKey({ kind: "item" }), "item");
+    assert.equal(viewSelectionKey({ kind: "chest" }), "chest");
     assert.equal(viewSelectionKey({ kind: "task" }), "task");
     assert.equal(viewSelectionKey({ kind: "template", id: "abc" }), "template:abc");
     assert.equal(viewSelectionKey({ kind: "snapshot", id: "abc" }), "template:abc");

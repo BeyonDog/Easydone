@@ -4,6 +4,7 @@ import {
   clampScrollLeft,
   computeMaxScrollLeft,
   isHorizontalDominantWheel,
+  resolveHorizontalOverflowVisible,
   resolveHorizontalWheelDelta,
 } from "./tableAxisScroll.ts";
 
@@ -41,5 +42,22 @@ describe("resolveHorizontalWheelDelta", () => {
 
   it("uses deltaX otherwise", () => {
     assert.equal(resolveHorizontalWheelDelta(8, 0, false), 8);
+  });
+});
+
+describe("resolveHorizontalOverflowVisible", () => {
+  it("shows when maxLeft exceeds threshold", () => {
+    assert.equal(resolveHorizontalOverflowVisible(5, false), true);
+    assert.equal(resolveHorizontalOverflowVisible(3, false), true);
+  });
+
+  it("hides when maxLeft is at or below threshold while inactive", () => {
+    assert.equal(resolveHorizontalOverflowVisible(2, false), false);
+    assert.equal(resolveHorizontalOverflowVisible(1, false), false);
+  });
+
+  it("hides only when maxLeft is zero while active", () => {
+    assert.equal(resolveHorizontalOverflowVisible(0, true), false);
+    assert.equal(resolveHorizontalOverflowVisible(1, true), true);
   });
 });

@@ -1,4 +1,9 @@
-import { PRELIVE_GMT_ENV, type GmtEnvEntry } from "./gmtClient.ts";
+import {
+  PRELIVE_GMT_ENV,
+  isPreliveGmtEnvName,
+  type GmtEnvEntry,
+} from "./gmtClient.ts";
+import { mapOverseasGmtEnvToGtopRegionServerName } from "./gtopBranchServers.ts";
 
 export type GmtPlatform = "overseas" | "cn";
 
@@ -56,14 +61,12 @@ export function switchGmtPlatform<T extends PlatformSelectionConfig>(
           gtopCnRegionServerName: config.gtopRegionServerName,
         }
       : {
-          gmtOverseasEnvId:
-            config.gmtEnvName === PRELIVE_GMT_ENV.name
-              ? config.gmtOverseasEnvId
-              : config.gmtEnvId,
-          gmtOverseasEnvName:
-            config.gmtEnvName === PRELIVE_GMT_ENV.name
-              ? config.gmtOverseasEnvName
-              : config.gmtEnvName,
+          gmtOverseasEnvId: isPreliveGmtEnvName(config.gmtEnvName)
+            ? config.gmtOverseasEnvId
+            : config.gmtEnvId,
+          gmtOverseasEnvName: isPreliveGmtEnvName(config.gmtEnvName)
+            ? config.gmtOverseasEnvName
+            : config.gmtEnvName,
           gtopOverseasEnvId: config.gtopEnvId,
           gtopOverseasEnvName: config.gtopEnvName,
           gtopOverseasRegionServerId: config.gtopRegionServerId,
@@ -98,7 +101,13 @@ export function switchGmtPlatform<T extends PlatformSelectionConfig>(
   };
 }
 
-/** 海外 PreLive（PR）开关：开启时锁定 PreLive-SG，关闭时恢复上次海外分支。 */
+export type OverseasTopbarEnvInput = {
+  id: number;
+  name: string;
+  protocol?: number | null;
+};
+
+/** 海外 PreLive（PR）开关：开启时默认 PreLive-SG（或保留已在名单内的选择），关闭时恢复上次海外分支。 */
 export function setGmtPreliveEnabled<T extends PlatformSelectionConfig>(
   config: T,
   enabled: boolean,
@@ -109,17 +118,20 @@ export function setGmtPreliveEnabled<T extends PlatformSelectionConfig>(
   if (Boolean(config.gmtPreliveEnabled) === enabled) return config;
 
   if (enabled) {
-    const snapId =
-      config.gmtEnvName === PRELIVE_GMT_ENV.name ? config.gmtOverseasEnvId : config.gmtEnvId;
-    const snapName =
-      config.gmtEnvName === PRELIVE_GMT_ENV.name ? config.gmtOverseasEnvName : config.gmtEnvName;
+    const snapId = isPreliveGmtEnvName(config.gmtEnvName)
+      ? config.gmtOverseasEnvId
+      : config.gmtEnvId;
+    const snapName = isPreliveGmtEnvName(config.gmtEnvName)
+      ? config.gmtOverseasEnvName
+      : config.gmtEnvName;
+    const keepCurrent = isPreliveGmtEnvName(config.gmtEnvName);
     return {
       ...config,
       gmtPreliveEnabled: true,
       gmtOverseasEnvId: snapId,
       gmtOverseasEnvName: snapName,
-      gmtEnvId: PRELIVE_GMT_ENV.id,
-      gmtEnvName: PRELIVE_GMT_ENV.name,
+      gmtEnvId: keepCurrent ? config.gmtEnvId : PRELIVE_GMT_ENV.id,
+      gmtEnvName: keepCurrent ? config.gmtEnvName : PRELIVE_GMT_ENV.name,
     };
   }
 
@@ -128,6 +140,20 @@ export function setGmtPreliveEnabled<T extends PlatformSelectionConfig>(
     gmtPreliveEnabled: false,
     gmtEnvId: config.gmtOverseasEnvId,
     gmtEnvName: config.gmtOverseasEnvName,
+  };
+}
+
+/** PR 模式下只改 GMT 区服，不联动 GTOP。 */
+export function selectPreliveTopbarEnv<T extends PlatformSelectionConfig>(
+  config: T,
+  env: OverseasTopbarEnvInput,
+): T {
+  if (config.gmtPlatform === "cn" || !config.gmtPreliveEnabled) return config;
+  if (!isPreliveGmtEnvName(env.name)) return config;
+  return {
+    ...config,
+    gmtEnvId: env.id,
+    gmtEnvName: env.name,
   };
 }
 
@@ -153,6 +179,38 @@ export function selectCnServer<T extends PlatformSelectionConfig>(
     gtopCnEnvName: CN_GTOP_ENV_NAME,
     gtopCnRegionServerId: null,
     gtopCnRegionServerName: gtopServerName,
+  };
+}
+
+/**
+ * Overseas topbar env change: sync GMT selection + (when possible) GTOP region server.
+ *
+ * - When the overseas GMT env has no GTOP mapping (e.g. CCS), keep the previous GTOP target.
+ * - When it has a mapping, clear GTOP region server id so the resolver can re-fetch id.
+ */
+export function selectOverseasTopbarEnvWithGtopSync<T extends PlatformSelectionConfig>(
+  config: T,
+  env: OverseasTopbarEnvInput,
+): T {
+  if (config.gmtPlatform === "cn") return config;
+
+  const mappedGtopRegionServerName = mapOverseasGmtEnvToGtopRegionServerName(env.name, env.protocol);
+  const next: T = {
+    ...config,
+    gmtEnvId: env.id,
+    gmtEnvName: env.name,
+    gmtOverseasEnvId: env.id,
+    gmtOverseasEnvName: env.name,
+  };
+
+  if (!mappedGtopRegionServerName) return next;
+
+  return {
+    ...next,
+    gtopRegionServerId: null,
+    gtopRegionServerName: mappedGtopRegionServerName,
+    gtopOverseasRegionServerId: null,
+    gtopOverseasRegionServerName: mappedGtopRegionServerName,
   };
 }
 

@@ -7,6 +7,8 @@ import { AddExpPanel } from "./AddExpPanel";
 import { RankUpPanel } from "./RankUpPanel";
 import { UploadConfigPanel } from "./UploadConfigPanel.tsx";
 import { TaskMapCheckPanel } from "./TaskMapCheckPanel.tsx";
+import { TaskIssuesPanel } from "./TaskIssuesPanel.tsx";
+import { ClassLoadoutPanel } from "./ClassLoadoutPanel.tsx";
 import { useClampedMenuPosition } from "./hooks/useClampedMenuPosition.ts";
 import { useTableAxisScroll } from "./hooks/useTableAxisScroll.ts";
 import { useTableRowToTemplateDrag } from "./hooks/useTableRowToTemplateDrag.tsx";
@@ -27,7 +29,7 @@ import type {
   TaskTableFilter,
 } from "./types";
 import type { GlobalSendSubmitPayload } from "./GlobalSendMailModal.tsx";
-import { excelAccountPath, excelItemPath, excelMissionPath, excelRankPath, rankCsvCandidatePaths, rankingSeasonInfoCsvCandidatePaths } from "./lib/paths";
+import { excelAccountPath, excelChestPath, excelItemPath, excelMissionPath, excelRankPath, conditionCsvPath, rankCsvCandidatePaths, rankingSeasonInfoCsvCandidatePaths } from "./lib/paths";
 import {
   DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC,
   fingerprintsEqual,
@@ -55,12 +57,15 @@ import {
   itemQualityPrefixFromCell,
   readOptionalSheetFromWorkbook,
   readSheetFromWorkbook,
+  appendChestWorkbookToItemSheet,
+  buildChestCatalogAoa,
   resolveDefenseValueColumnIndex,
   resolveItemIdColumnIndex,
   resolveItemQualityColumnIndex,
   resolveRemarkColumnIndex,
   resolveSeasonItemColumnIndex,
   resolveTaskChainColumnIndex,
+  resolveTaskIdColumnIndex,
   resolveTaskTypeColumnIndex,
   resolveTypeRemarkColumnIndex,
   taskChainFilterKey,
@@ -72,6 +77,16 @@ import {
   rowMatchesEmotePreset,
   rowMatchesFittingRoomSkinPreset,
   rowMatchesKeyword,
+  rowHasAnyKeywordHit,
+  analyzeFilterPasteMatches,
+  formatFilterPasteInputDisplay,
+  formatUnmatchedFilterTokensHint,
+  isBulkyFilterPaste,
+  isFilterPasteDisplayPlaceholder,
+  normalizeFilterKeywordForStorage,
+  FILTER_PASTE_DISPLAY_FAIL,
+  isFilterPasteSuccessDisplay,
+  formatCustomKeywordChipLabel,
   typeRemarkFilterKey,
   type SheetMatrix,
 } from "./lib/xlsxHelpers";
@@ -143,7 +158,10 @@ import {
   gmtOpenLoginWindow,
   gmtSessionProbe,
   gmtSessionSliceFromConfig,
+  filterPreliveGmtEnvs,
+  gtopBlockedByPreliveMessage,
   isPreliveGmtEnabled,
+  isPreliveGmtEnvName,
   PRELIVE_GMT_ENV,
   type GmtEnvEntry,
 } from "./lib/gmtClient";
@@ -204,10 +222,12 @@ import {
 } from "./lib/sidebarGallerySplit.ts";
 import {
   DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR,
+  DEFAULT_SIDEBAR_CHEST_CARD_COLOR,
   DEFAULT_SIDEBAR_ITEM_CARD_COLOR,
   DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR,
   DEFAULT_SIDEBAR_TASK_CARD_COLOR,
   sidebarAddExpDefaultColor,
+  sidebarClassLoadoutDefaultColor,
   sidebarRankUpDefaultColor,
   sidebarResetMatchDefaultColor,
   sidebarSproutDefaultColor,
@@ -228,6 +248,17 @@ import {
   spreadsheetXmlWithBom,
 } from "./lib/taskMapTagCheck/exportIssuesSpreadsheet.ts";
 import type { TagCheckReport } from "./lib/taskMapTagCheck/index.ts";
+import { issueReportSignature, isTaskIssueAlertActive } from "./lib/taskIssueAck.ts";
+import {
+  conditionRowsToMap,
+  parseConditionAoaAll,
+  parseConditionCsvAll,
+  parseTaskConditionRefs,
+  parseTaskCsvAll,
+  mergeTaskConditionRefsWithCsv,
+} from "./lib/taskConfigHealth.ts";
+import { translateTaskConditionIds, type TranslateTaskConditionsResult } from "./lib/conditionTranslate.ts";
+import { ConditionTranslateModal } from "./ConditionTranslateModal.tsx";
 import {
   clearModifiedConfigCsv,
   clearModifiedConfigCsvBatch,
@@ -275,13 +306,17 @@ import {
 } from "./lib/gtopClient";
 import {
   findGtopEnvByName,
+  GTOP_FIXED_ENV_NAME,
   GTOP_CN_ENV_NAME,
+  mapOverseasGmtEnvToGtopRegionServerName,
   resolveGtopBranchServerOptions,
 } from "./lib/gtopBranchServers.ts";
 import {
   CN_GMT_ENV_OPTIONS,
   gmtRequestRegions,
   selectCnServer,
+  selectOverseasTopbarEnvWithGtopSync,
+  selectPreliveTopbarEnv,
   setGmtPreliveEnabled,
   switchGmtPlatform,
   type GmtPlatform,
@@ -302,8 +337,8 @@ const GMT_COMMAND_LIST_PATH = "/command/list?page=1&size=20";
 const NON_HIDEABLE_ITEM_HEADERS = new Set(["物品ID"]);
 const NON_HIDEABLE_TASK_HEADERS = new Set(["任务ID"]);
 
-function headerCannotHide(table: "item" | "task", header: string): boolean {
-  return table === "item" ? NON_HIDEABLE_ITEM_HEADERS.has(header) : NON_HIDEABLE_TASK_HEADERS.has(header);
+function headerCannotHide(table: "item" | "task" | "chest", header: string): boolean {
+  return table === "task" ? NON_HIDEABLE_TASK_HEADERS.has(header) : NON_HIDEABLE_ITEM_HEADERS.has(header);
 }
 
 type ItemFilterSectionId = "typeRemark" | "quality" | "defense";
@@ -385,8 +420,16 @@ function migrateTaskTypeStoredKey(k: string): string {
 
 /** 当前表格勾选行所属业务类型（与快照 source 对齐） */
 function getCurrentTableSource(activeView: ActiveView, config: AppConfig): "item" | "task" | null {
-  if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return null;
-  if (activeView.kind === "item") return "item";
+  if (
+    activeView.kind === "addExp" ||
+    activeView.kind === "rankUp" ||
+    activeView.kind === "uploadConfig" ||
+    activeView.kind === "taskMapCheck" ||
+    activeView.kind === "taskIssues" ||
+    activeView.kind === "classLoadout"
+  )
+    return null;
+  if (activeView.kind === "item" || activeView.kind === "chest") return "item";
   if (activeView.kind === "task") return "task";
   if (activeView.kind === "template" || activeView.kind === "snapshot") {
     const id = activeView.id;
@@ -712,9 +755,10 @@ function rowPassesTaskTableFilter(
   col: { tt: number; ch: number },
   headers: readonly string[] = [],
 ): boolean {
-  if (f.rowKeyword?.trim() && !rowMatchesKeyword(row, f.rowKeyword)) return false;
+  const idCol = resolveTaskIdColumnIndex([...headers]);
+  if (f.rowKeyword?.trim() && !rowMatchesKeyword(row, f.rowKeyword, idCol)) return false;
   if (f.customKeywordKeys.length > 0) {
-    if (!f.customKeywordKeys.every((k) => rowMatchesKeyword(row, k))) return false;
+    if (!f.customKeywordKeys.every((k) => rowMatchesKeyword(row, k, idCol))) return false;
   }
   if (col.tt >= 0 && f.taskTypeKeys.length > 0) {
     if (!f.taskTypeKeys.includes(taskTypeFilterKey(row[col.tt]))) return false;
@@ -982,10 +1026,13 @@ const defaultConfig = (): AppConfig => ({
   itemRemarkColumn: null,
   hiddenItemColumns: [],
   hiddenTaskColumns: [],
+  hiddenChestColumns: [],
   freezeThroughItemHeader: null,
   freezeThroughTaskHeader: null,
+  freezeThroughChestHeader: null,
   itemTableFilter: null,
   taskTableFilter: null,
+  chestTableFilter: null,
   savedSnapshots: [],
   sendTemplates: [],
   savedTemplates: [],
@@ -996,10 +1043,12 @@ const defaultConfig = (): AppConfig => ({
   themeWallpaperOpacity: DEFAULT_THEME_WALLPAPER_OPACITY,
   sidebarItemCardColor: DEFAULT_SIDEBAR_ITEM_CARD_COLOR,
   sidebarTaskCardColor: DEFAULT_SIDEBAR_TASK_CARD_COLOR,
+  sidebarChestCardColor: DEFAULT_SIDEBAR_CHEST_CARD_COLOR,
   sidebarAddExpCardColor: DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR,
   sidebarRankUpCardColor: DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR,
   sidebarItemCardColorOverride: null,
   sidebarTaskCardColorOverride: null,
+  sidebarChestCardColorOverride: null,
   sidebarTemplateOrder: null,
   sidebarCardOrder: null,
   sidebarCardHidden: null,
@@ -1077,10 +1126,12 @@ export default function App() {
   const gmtSessionRequestIdRef = useRef(0);
   const gtopSessionRequestIdRef = useRef(0);
   const cnGtopRequestIdRef = useRef(0);
+  const overseasGtopRequestIdRef = useRef(0);
   const activeGmtPlatformRef = useRef<GmtPlatform>("overseas");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [itemAoa, setItemAoa] = useState<SheetMatrix | null>(null);
+  const [chestAoa, setChestAoa] = useState<SheetMatrix | null>(null);
   const [itemTypeLookupIndex, setItemTypeLookupIndex] = useState<ItemTypeLookupIndex>(
     EMPTY_ITEM_TYPE_LOOKUP_INDEX,
   );
@@ -1096,12 +1147,13 @@ export default function App() {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(() => new Set());
   /** 勾选先后顺序（UI 用；完成任务按任务 ID 升序，不用此队列） */
   const [selectedRowOrder, setSelectedRowOrder] = useState<number[]>(() => []);
-  const [pinnedRowOrder, setPinnedRowOrder] = useState<{ item: number[]; task: number[] }>({
+  const [pinnedRowOrder, setPinnedRowOrder] = useState<{ item: number[]; task: number[]; chest: number[] }>({
     item: [],
     task: [],
+    chest: [],
   });
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; dataIdx: number | null } | null>(null);
-  const [hiddenPanel, setHiddenPanel] = useState<"item" | "task" | null>(null);
+  const [hiddenPanel, setHiddenPanel] = useState<"item" | "task" | "chest" | null>(null);
   const [hiddenPanelDraft, setHiddenPanelDraft] = useState<string[] | null>(null);
 
   const [goGmtModal, setGoGmtModal] = useState<{ instruction: string; repeatVisit: boolean } | null>(null);
@@ -1121,6 +1173,12 @@ export default function App() {
   const [taskMapCheckBusy, setTaskMapCheckBusy] = useState(false);
   const [tagCheckReport, setTagCheckReport] = useState<TagCheckReport | null>(null);
   const [tagCheckError, setTagCheckError] = useState<string | null>(null);
+  const [ackedIssueSignature, setAckedIssueSignature] = useState<string | null>(null);
+  const [conditionTranslate, setConditionTranslate] = useState<{
+    taskId: string;
+    result: TranslateTaskConditionsResult;
+  } | null>(null);
+  const afterExcelLoadRef = useRef<() => void>(() => {});
   const [sidebarGalleryOpen, setSidebarGalleryOpen] = useState(false);
   const [sidebarGalleryMainOpen, setSidebarGalleryMainOpen] = useState(false);
   const [gallerySplitWidthPx, setGallerySplitWidthPx] = useState(520);
@@ -1185,6 +1243,9 @@ export default function App() {
   const [taskFilterDraft, setTaskFilterDraft] = useState<TaskTableFilter>(() => emptyTaskTableFilter());
   const [itemFilterQuickQuery, setItemFilterQuickQuery] = useState("");
   const [taskFilterQuickQuery, setTaskFilterQuickQuery] = useState("");
+  /** 压缩显示「已识别id」时，保存用的规范化关键字 */
+  const [itemFilterQuickRaw, setItemFilterQuickRaw] = useState<string | null>(null);
+  const [taskFilterQuickRaw, setTaskFilterQuickRaw] = useState<string | null>(null);
   const itemFilterQuickInputRef = useRef<HTMLInputElement>(null);
   const taskFilterQuickInputRef = useRef<HTMLInputElement>(null);
   const itemFilterQuickFocusPendingRef = useRef(false);
@@ -1321,6 +1382,12 @@ export default function App() {
     if (base) lastSavedConfigRef.current = { ...base, itemTableFilter: filter };
   }, []);
 
+  const saveChestTableFilterToDisk = useCallback(async (filter: ItemTableFilter | null) => {
+    await invoke("save_chest_table_filter", { filter });
+    const base = lastSavedConfigRef.current ?? configRef.current;
+    if (base) lastSavedConfigRef.current = { ...base, chestTableFilter: filter };
+  }, []);
+
   const saveTaskTableFilterToDisk = useCallback(async (filter: TaskTableFilter | null) => {
     await invoke("save_task_table_filter", { filter });
     const base = lastSavedConfigRef.current ?? configRef.current;
@@ -1335,8 +1402,13 @@ export default function App() {
       ...c,
       freezeThroughItemHeader: (c as AppConfig).freezeThroughItemHeader ?? null,
       freezeThroughTaskHeader: (c as AppConfig).freezeThroughTaskHeader ?? null,
+      freezeThroughChestHeader: (c as AppConfig).freezeThroughChestHeader ?? null,
+      hiddenChestColumns: Array.isArray((c as AppConfig).hiddenChestColumns)
+        ? (c as AppConfig).hiddenChestColumns!
+        : [],
       itemTableFilter: normalizeItemTableFilterFromDisk((c as AppConfig).itemTableFilter),
       taskTableFilter: normalizeTaskTableFilterFromDisk((c as AppConfig).taskTableFilter),
+      chestTableFilter: normalizeItemTableFilterFromDisk((c as AppConfig).chestTableFilter ?? null),
       savedSnapshots: rawSnaps.map((s) => ({ ...s, freezeThroughHeader: s.freezeThroughHeader ?? null })),
       savedTemplates: Array.isArray((c as AppConfig).savedTemplates) ? (c as AppConfig).savedTemplates : [],
       recycledTemplates: Array.isArray((c as AppConfig).recycledTemplates)
@@ -1350,6 +1422,9 @@ export default function App() {
     const rawPlatform = (c as Partial<AppConfig>).gmtPlatform === "cn" ? "cn" : "overseas";
     const preliveOn =
       rawPlatform !== "cn" && Boolean((c as Partial<AppConfig>).gmtPreliveEnabled);
+    const loadedGmtEnvId = (c as AppConfig).gmtEnvId ?? null;
+    const loadedGmtEnvName = (c as AppConfig).gmtEnvName ?? null;
+    const preliveEnvOk = preliveOn && isPreliveGmtEnvName(loadedGmtEnvName);
     const loadedConfig: AppConfig = {
       ...mergedConfig,
       themeAccentHex: normalizeThemeAccentHex((c as AppConfig).themeAccentHex),
@@ -1367,8 +1442,16 @@ export default function App() {
       gmtBaseUrl: (c as AppConfig).gmtBaseUrl?.trim() || DEFAULT_GMT_BASE_URL,
       gmtCookie: (c as AppConfig).gmtCookie ?? "",
       gmtCnCookie: (c as Partial<AppConfig>).gmtCnCookie ?? "",
-      gmtEnvId: preliveOn ? PRELIVE_GMT_ENV.id : (c as AppConfig).gmtEnvId ?? null,
-      gmtEnvName: preliveOn ? PRELIVE_GMT_ENV.name : (c as AppConfig).gmtEnvName ?? null,
+      gmtEnvId: preliveOn
+        ? preliveEnvOk && loadedGmtEnvId != null
+          ? loadedGmtEnvId
+          : PRELIVE_GMT_ENV.id
+        : loadedGmtEnvId,
+      gmtEnvName: preliveOn
+        ? preliveEnvOk
+          ? loadedGmtEnvName
+          : PRELIVE_GMT_ENV.name
+        : loadedGmtEnvName,
       gmtOverseasEnvId:
         (c as Partial<AppConfig>).gmtOverseasEnvId ??
         (rawPlatform === "overseas" && !preliveOn ? (c as AppConfig).gmtEnvId ?? null : null),
@@ -1438,6 +1521,7 @@ export default function App() {
           excelLoadMessageModeRef.current = "fetch";
           setLoadError(null);
           setItemAoa(null);
+          setChestAoa(null);
           setTaskAoa(null);
           setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
           setAccountLevelByLevel(null);
@@ -1472,6 +1556,7 @@ export default function App() {
       if (messageMode !== "silent") {
         setLoadError(null);
         setItemAoa(null);
+        setChestAoa(null);
         setTaskAoa(null);
         setItemTypeLookupIndex(EMPTY_ITEM_TYPE_LOOKUP_INDEX);
         setAccountLevelByLevel(null);
@@ -1486,6 +1571,7 @@ export default function App() {
 
       const ip = excelItemPath(root);
       const mp = excelMissionPath(root);
+      const cp = excelChestPath(root);
       let succeeded = false;
       try {
         const [ib64, mb64] = await Promise.all([
@@ -1494,7 +1580,28 @@ export default function App() {
         ]);
         if (isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) return false;
 
-        const item = readSheetFromWorkbook(ib64, "Item");
+        let item = readSheetFromWorkbook(ib64, "Item");
+        let chestCatalog: SheetMatrix | null = null;
+        try {
+          const cb64 = await invoke<string>("read_file_base64", { path: cp });
+          if (!isStaleExcelLoadSeq(seq, excelLoadSeqRef.current)) {
+            chestCatalog = buildChestCatalogAoa(cb64);
+            const { aoa: merged, appended, stamped } = appendChestWorkbookToItemSheet(item, cb64);
+            item = merged;
+            if (messageMode !== "silent") {
+              if (appended === 0 && stamped === 0) {
+                queueMicrotask(() => push("Chest.xlsx 未并入任何行，请检查表头/表名"));
+              } else {
+                queueMicrotask(() =>
+                  push(`Chest/Bundle：追加 ${appended} 行，标记 chest ${stamped} 行`),
+                );
+              }
+            }
+          }
+        } catch {
+          // Chest.xlsx 可选：缺失不阻断 Item 加载
+          chestCatalog = null;
+        }
         const task = readSheetFromWorkbook(mb64, "Task");
         const typeLookup = buildItemTypeLookupIndex(
           readOptionalSheetFromWorkbook(ib64, "ItemType"),
@@ -1502,6 +1609,7 @@ export default function App() {
         );
         applyLatest(() => {
           setItemAoa(item);
+          setChestAoa(chestCatalog);
           setTaskAoa(task);
           setItemTypeLookupIndex(typeLookup);
         });
@@ -1657,7 +1765,9 @@ export default function App() {
         if (excelLoadInFlightRef.current === 0) setExcelBackgroundBusy(false);
       }
 
-      return succeeded && !isStaleExcelLoadSeq(seq, excelLoadSeqRef.current);
+      const ok = succeeded && !isStaleExcelLoadSeq(seq, excelLoadSeqRef.current);
+      if (ok) afterExcelLoadRef.current();
+      return ok;
     },
     [push],
   );
@@ -1721,12 +1831,19 @@ export default function App() {
         setGmtLoggedIn(r.loggedIn);
         if (r.loggedIn) {
           onGmtSessionVerifiedLoggedIn();
-          const envs =
-            cfg.gmtPlatform === "cn"
-              ? CN_GMT_ENV_OPTIONS
-              : isPreliveGmtEnabled(cfg)
-                ? [PRELIVE_GMT_ENV]
-                : sortBranchEnvEntries(await gmtFetchEnvs(slice));
+          let envs: GmtEnvEntry[];
+          if (cfg.gmtPlatform === "cn") {
+            envs = CN_GMT_ENV_OPTIONS;
+          } else if (isPreliveGmtEnabled(cfg)) {
+            try {
+              const fetched = filterPreliveGmtEnvs(await gmtFetchEnvs(slice));
+              envs = fetched.length > 0 ? fetched : [PRELIVE_GMT_ENV];
+            } catch {
+              envs = [PRELIVE_GMT_ENV];
+            }
+          } else {
+            envs = sortBranchEnvEntries(await gmtFetchEnvs(slice));
+          }
           if (!isCurrent()) return;
           setGmtEnvs(envs);
           const heal = healGmtEnvConfig(
@@ -1791,83 +1908,129 @@ export default function App() {
     }
   }, []);
 
-  const resolveCnGtopTarget = useCallback(
-    async (cfg: AppConfig): Promise<AppConfig> => {
-      if (
-        cfg.gmtPlatform !== "cn" ||
-        activeGmtPlatformRef.current !== "cn" ||
-        !cfg.gtopRegionServerName?.startsWith("CN-")
-      ) {
-        return cfg;
-      }
-      const targetServerName = cfg.gtopRegionServerName;
-      const requestId = ++cnGtopRequestIdRef.current;
-      const latestConfig = () =>
-        configRef.current ?? latestPersistConfigRef.current ?? cfg;
+  const resolveGtopTarget = useCallback(
+    async (cfg: AppConfig, targetPlatform: GmtPlatform, requestIdRef: { current: number }): Promise<AppConfig> => {
+      if (cfg.gmtPlatform !== targetPlatform) return cfg;
+      if (activeGmtPlatformRef.current !== targetPlatform) return cfg;
+
+      const targetServerName = cfg.gtopRegionServerName?.trim();
+      if (!targetServerName) return cfg;
+      if (targetPlatform === "cn" && !targetServerName.startsWith("CN-")) return cfg;
+      // Overseas resolver runs only when region server id is unresolved.
+      if (targetPlatform === "overseas" && cfg.gtopRegionServerId != null) return cfg;
+
+      const fixedEnvName = targetPlatform === "cn" ? GTOP_CN_ENV_NAME : GTOP_FIXED_ENV_NAME;
+      const slice = gtopSessionSliceFromConfig(cfg);
+
+      const requestId = ++requestIdRef.current;
+      const latestConfig = () => configRef.current ?? latestPersistConfigRef.current ?? cfg;
       const isCurrent = () =>
-        requestId === cnGtopRequestIdRef.current &&
-        activeGmtPlatformRef.current === "cn" &&
-        latestConfig().gmtPlatform === "cn" &&
+        requestId === requestIdRef.current &&
+        activeGmtPlatformRef.current === targetPlatform &&
+        latestConfig().gmtPlatform === targetPlatform &&
         latestConfig().gtopRegionServerName === targetServerName;
-      const unresolved: AppConfig = {
-        ...latestConfig(),
-        gtopEnvId: null,
-        gtopEnvName: GTOP_CN_ENV_NAME,
-        gtopRegionServerId: null,
-        gtopRegionServerName: targetServerName,
-        gtopCnEnvId: null,
-        gtopCnEnvName: GTOP_CN_ENV_NAME,
-        gtopCnRegionServerId: null,
-        gtopCnRegionServerName: targetServerName,
-      };
+
+      const unresolved: AppConfig =
+        targetPlatform === "cn"
+          ? {
+              ...latestConfig(),
+              gtopEnvId: null,
+              gtopEnvName: fixedEnvName,
+              gtopRegionServerId: null,
+              gtopRegionServerName: targetServerName,
+              gtopCnEnvId: null,
+              gtopCnEnvName: fixedEnvName,
+              gtopCnRegionServerId: null,
+              gtopCnRegionServerName: targetServerName,
+            }
+          : {
+              ...latestConfig(),
+              gtopEnvId: null,
+              gtopEnvName: fixedEnvName,
+              gtopRegionServerId: null,
+              gtopRegionServerName: targetServerName,
+              gtopOverseasEnvId: null,
+              gtopOverseasEnvName: fixedEnvName,
+              gtopOverseasRegionServerId: null,
+              gtopOverseasRegionServerName: targetServerName,
+            };
+
       try {
         await persist(unresolved);
         if (!isCurrent()) return configRef.current ?? unresolved;
         if (!cfg.gtopCookie.trim()) return unresolved;
-        const slice = gtopSessionSliceFromConfig(cfg);
-        const env = findGtopEnvByName(await gtopFetchEnvs(slice), GTOP_CN_ENV_NAME);
+
+        const env = findGtopEnvByName(await gtopFetchEnvs(slice), fixedEnvName);
         if (!isCurrent()) return configRef.current ?? unresolved;
         if (!env) {
-          push(`GTOP 未找到国服环境：${GTOP_CN_ENV_NAME}`);
+          push(`GTOP 未找到${targetPlatform === "cn" ? "国服" : "海外"}环境：${fixedEnvName}`);
           return unresolved;
         }
+
         const options = resolveGtopBranchServerOptions(
           await gtopFetchRegionServers(slice, env.id),
-          "cn",
+          targetPlatform,
         );
         if (!isCurrent()) return configRef.current ?? unresolved;
+
         const server = options.find((item) => item.name === unresolved.gtopRegionServerName);
         if (!server?.id) {
-          push(`GTOP 未找到国服区服：${unresolved.gtopRegionServerName}`);
-          const envResolved: AppConfig = {
-            ...latestConfig(),
-            gtopEnvId: env.id,
-            gtopEnvName: env.name,
-            gtopRegionServerId: null,
-            gtopCnEnvId: env.id,
-            gtopCnEnvName: env.name,
-            gtopCnRegionServerId: null,
-          };
+          push(`GTOP 未找到${targetPlatform === "cn" ? "国服" : "海外"}区服：${unresolved.gtopRegionServerName}`);
+          const envResolved: AppConfig =
+            targetPlatform === "cn"
+              ? {
+                  ...latestConfig(),
+                  gtopEnvId: env.id,
+                  gtopEnvName: env.name,
+                  gtopRegionServerId: null,
+                  gtopCnEnvId: env.id,
+                  gtopCnEnvName: env.name,
+                  gtopCnRegionServerId: null,
+                }
+              : {
+                  ...latestConfig(),
+                  gtopEnvId: env.id,
+                  gtopEnvName: env.name,
+                  gtopRegionServerId: null,
+                  gtopOverseasEnvId: env.id,
+                  gtopOverseasEnvName: env.name,
+                  gtopOverseasRegionServerId: null,
+                };
           await persist(envResolved);
           if (!isCurrent()) return configRef.current ?? envResolved;
           return envResolved;
         }
-        const next: AppConfig = {
-          ...latestConfig(),
-          gtopEnvId: env.id,
-          gtopEnvName: env.name,
-          gtopRegionServerId: server.id,
-          gtopRegionServerName: server.name,
-          gtopCnEnvId: env.id,
-          gtopCnEnvName: env.name,
-          gtopCnRegionServerId: server.id,
-          gtopCnRegionServerName: server.name,
-        };
+
+        const next: AppConfig =
+          targetPlatform === "cn"
+            ? {
+                ...latestConfig(),
+                gtopEnvId: env.id,
+                gtopEnvName: env.name,
+                gtopRegionServerId: server.id,
+                gtopRegionServerName: server.name,
+                gtopCnEnvId: env.id,
+                gtopCnEnvName: env.name,
+                gtopCnRegionServerId: server.id,
+                gtopCnRegionServerName: server.name,
+              }
+            : {
+                ...latestConfig(),
+                gtopEnvId: env.id,
+                gtopEnvName: env.name,
+                gtopRegionServerId: server.id,
+                gtopRegionServerName: server.name,
+                gtopOverseasEnvId: env.id,
+                gtopOverseasEnvName: env.name,
+                gtopOverseasRegionServerId: server.id,
+                gtopOverseasRegionServerName: server.name,
+              };
+
         await persist(next);
         if (!isCurrent()) return configRef.current ?? next;
         return next;
       } catch (e) {
-        if (isCurrent()) push(`GTOP 国服区服关联失败: ${e}`);
+        if (isCurrent()) push(`GTOP ${targetPlatform}区服关联失败: ${e}`);
         return unresolved;
       }
     },
@@ -1875,22 +2038,43 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (
-      !config ||
-      config.gmtPlatform !== "cn" ||
-      !gtopLoggedIn ||
-      !config.gtopRegionServerName?.startsWith("CN-")
-    ) {
-      return;
-    }
-    void resolveCnGtopTarget(config);
+    if (!config || config.gmtPlatform !== "cn" || !gtopLoggedIn || !config.gtopRegionServerName?.startsWith("CN-")) return;
+    void resolveGtopTarget(config, "cn", cnGtopRequestIdRef);
+  }, [config?.gmtPlatform, config?.gtopCookie, config?.gtopRegionServerName, gtopLoggedIn, resolveGtopTarget]);
+
+  useEffect(() => {
+    if (!config || config.gmtPlatform !== "overseas" || !gtopLoggedIn || !config.gtopRegionServerName?.trim()) return;
+    if (config.gtopRegionServerId != null) return;
+    void resolveGtopTarget(config, "overseas", overseasGtopRequestIdRef);
   }, [
     config?.gmtPlatform,
     config?.gtopCookie,
     config?.gtopRegionServerName,
+    config?.gtopRegionServerId,
     gtopLoggedIn,
-    resolveCnGtopTarget,
+    resolveGtopTarget,
   ]);
+
+  useEffect(() => {
+    if (!config || config.gmtPlatform !== "overseas" || isPreliveGmtEnabled(config)) return;
+    if (config.gmtEnvId == null) return;
+    if (!gmtEnvs.length) return;
+
+    const env = gmtEnvs.find((e) => e.id === config.gmtEnvId);
+    if (!env) return;
+
+    const mappedGtopRegionServerName = mapOverseasGmtEnvToGtopRegionServerName(env.name, env.protocol);
+    if (!mappedGtopRegionServerName) return; // e.g. CCS: keep previous GTOP target
+
+    if (config.gtopRegionServerName === mappedGtopRegionServerName) return;
+
+    const next = selectOverseasTopbarEnvWithGtopSync(config, {
+      id: env.id,
+      name: env.name,
+      protocol: env.protocol,
+    });
+    void persist(next);
+  }, [config?.gmtPlatform, config?.gmtEnvId, config?.gtopRegionServerName, gmtEnvs, isPreliveGmtEnabled, persist]);
 
   const completeGtopLogin = useCallback(async () => {
     if (!config) return;
@@ -2030,21 +2214,27 @@ export default function App() {
   const selectTopbarGmtEnv = useCallback(
     async (envId: number) => {
       if (!config) return;
-      if (isPreliveGmtEnabled(config)) return;
       const env = gmtEnvs.find((item) => item.id === envId);
       if (!env) return;
+      if (isPreliveGmtEnabled(config)) {
+        await persist(selectPreliveTopbarEnv(config, {
+          id: env.id,
+          name: env.name,
+          protocol: env.protocol,
+        }));
+        return;
+      }
       if (config.gmtPlatform === "cn") {
         const paired = selectCnServer(config, env.name);
         await persist(paired);
         return;
       }
-      await persist({
-        ...config,
-        gmtEnvId: env.id,
-        gmtEnvName: env.name,
-        gmtOverseasEnvId: env.id,
-        gmtOverseasEnvName: env.name,
+      const next = selectOverseasTopbarEnvWithGtopSync(config, {
+        id: env.id,
+        name: env.name,
+        protocol: env.protocol,
       });
+      await persist(next);
     },
     [config, gmtEnvs, persist],
   );
@@ -2128,9 +2318,14 @@ export default function App() {
       return;
     }
     if (!config) return;
-    const key = hiddenPanel === "item" ? "hiddenItemColumns" : "hiddenTaskColumns";
-    const blocked = hiddenPanel === "item" ? NON_HIDEABLE_ITEM_HEADERS : NON_HIDEABLE_TASK_HEADERS;
-    setHiddenPanelDraft([...config[key]].filter((h) => !blocked.has(h)));
+    const key =
+      hiddenPanel === "item"
+        ? "hiddenItemColumns"
+        : hiddenPanel === "chest"
+          ? "hiddenChestColumns"
+          : "hiddenTaskColumns";
+    const blocked = hiddenPanel === "task" ? NON_HIDEABLE_TASK_HEADERS : NON_HIDEABLE_ITEM_HEADERS;
+    setHiddenPanelDraft([...(config[key] ?? [])].filter((h) => !blocked.has(h)));
   }, [hiddenPanel]);
 
   const currentAoa = useMemo(() => {
@@ -2139,19 +2334,42 @@ export default function App() {
       const tpl = config.savedTemplates.find((t) => t.id === activeView.id);
       return tpl?.aoa ?? null;
     }
+    if (activeView.kind === "chest") return chestAoa;
     return activeView.kind === "item" ? itemAoa : taskAoa;
-  }, [activeView, itemAoa, taskAoa, config]);
+  }, [activeView, itemAoa, chestAoa, taskAoa, config]);
 
   const isItemTableView = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return false;
+    if (
+      activeView.kind === "addExp" ||
+      activeView.kind === "rankUp" ||
+      activeView.kind === "uploadConfig" ||
+      activeView.kind === "taskMapCheck" ||
+      activeView.kind === "taskIssues" ||
+      activeView.kind === "classLoadout" ||
+      activeView.kind === "chest"
+    )
+      return false;
     if (activeView.kind === "item") return true;
     if (activeView.kind === "task") return false;
     if (!config) return false;
     return config.savedTemplates.find((t) => t.id === activeView.id)?.source === "item";
   }, [activeView, config]);
 
+  const isChestTableView = activeView.kind === "chest";
+
+  const isItemLikeTableView = isItemTableView || isChestTableView;
+
   const isTaskTableView = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return false;
+    if (
+      activeView.kind === "addExp" ||
+      activeView.kind === "rankUp" ||
+      activeView.kind === "uploadConfig" ||
+      activeView.kind === "taskMapCheck" ||
+      activeView.kind === "taskIssues" ||
+      activeView.kind === "classLoadout" ||
+      activeView.kind === "chest"
+    )
+      return false;
     if (activeView.kind === "task") return true;
     if (activeView.kind === "item") return false;
     if (!config) return false;
@@ -2218,10 +2436,23 @@ export default function App() {
   ]);
 
   const hiddenSet = useMemo(() => {
-    if (activeView.kind === "addExp" || activeView.kind === "rankUp" || activeView.kind === "uploadConfig" || activeView.kind === "taskMapCheck") return new Set<string>();
+    if (
+      activeView.kind === "addExp" ||
+      activeView.kind === "rankUp" ||
+      activeView.kind === "uploadConfig" ||
+      activeView.kind === "taskMapCheck" ||
+      activeView.kind === "taskIssues" ||
+      activeView.kind === "classLoadout"
+    )
+      return new Set<string>();
     if (activeView.kind === "template" || activeView.kind === "snapshot") return new Set<string>();
-    const arr = activeView.kind === "item" ? config?.hiddenItemColumns ?? [] : config?.hiddenTaskColumns ?? [];
-    const blocked = activeView.kind === "item" ? NON_HIDEABLE_ITEM_HEADERS : NON_HIDEABLE_TASK_HEADERS;
+    const arr =
+      activeView.kind === "item"
+        ? config?.hiddenItemColumns ?? []
+        : activeView.kind === "chest"
+          ? config?.hiddenChestColumns ?? []
+          : config?.hiddenTaskColumns ?? [];
+    const blocked = activeView.kind === "task" ? NON_HIDEABLE_TASK_HEADERS : NON_HIDEABLE_ITEM_HEADERS;
     return new Set(arr.filter((h) => !blocked.has(h)));
   }, [activeView, config]);
 
@@ -2239,7 +2470,7 @@ export default function App() {
   }, [activeView.kind, activeView.kind === "snapshot" ? activeView.id : ""]);
 
   useEffect(() => {
-    if (!isItemTableView) {
+    if (!isItemLikeTableView) {
       setItemLineQty({});
       return;
     }
@@ -2261,7 +2492,7 @@ export default function App() {
       }
       return changed ? next : q;
     });
-  }, [selectedRows, isItemTableView]);
+  }, [selectedRows, isItemLikeTableView]);
 
   const baseBodyRows = useMemo(() => {
     if (!currentAoa || currentAoa.length < 2) return [] as { row: unknown[]; dataIdx: number }[];
@@ -2285,7 +2516,7 @@ export default function App() {
   }, [baseBodyRows, currentAoa, tableSheetSource]);
 
   const itemFilterColIdx = useMemo(() => {
-    if (!isItemTableView || !headers.length) {
+    if (!isItemLikeTableView || !headers.length) {
       return { tr: -1, def: -1, qual: -1, remark: -1, season: -1, type: -1, sub: -1, initDur: -1 };
     }
     return {
@@ -2298,25 +2529,25 @@ export default function App() {
       sub: resolveItemRowSubTypeColumnIndex(headers),
       initDur: resolveInitDurabilityColumnIndex(headers),
     };
-  }, [isItemTableView, headers, config?.itemRemarkColumn]);
+  }, [isItemLikeTableView, headers, config?.itemRemarkColumn]);
 
   const itemIdColIndex = useMemo(() => {
-    if (!isItemTableView || !headers.length) return -1;
+    if (!isItemLikeTableView || !headers.length) return -1;
     return resolveItemIdColumnIndex(headers);
-  }, [isItemTableView, headers]);
+  }, [isItemLikeTableView, headers]);
 
   const itemTypeColIndex = useMemo(() => {
-    if (!isItemTableView || !headers.length) return -1;
+    if (!isItemLikeTableView || !headers.length) return -1;
     return resolveItemRowTypeColumnIndex(headers);
-  }, [isItemTableView, headers]);
+  }, [isItemLikeTableView, headers]);
 
   const itemSubTypeColIndex = useMemo(() => {
-    if (!isItemTableView || !headers.length) return -1;
+    if (!isItemLikeTableView || !headers.length) return -1;
     return resolveItemRowSubTypeColumnIndex(headers);
-  }, [isItemTableView, headers]);
+  }, [isItemLikeTableView, headers]);
 
   const itemFilterOptions = useMemo(() => {
-    if (!isItemTableView || !currentAoa || currentAoa.length < 2) {
+    if (!isItemLikeTableView || !currentAoa || currentAoa.length < 2) {
       return { typeRemark: [] as string[], quality: [] as string[] };
     }
     const typeSet = new Set<string>();
@@ -2332,18 +2563,18 @@ export default function App() {
       if (itemFilterColIdx.qual >= 0) qualSet.add(itemQualityFilterBucket(row[itemFilterColIdx.qual]));
     }
     return { typeRemark: [...typeSet], quality: [...qualSet] };
-  }, [isItemTableView, currentAoa, itemFilterColIdx]);
+  }, [isItemLikeTableView, currentAoa, itemFilterColIdx]);
 
   const taskFilterColIdx = useMemo(() => {
-    if (isItemTableView || !headers.length) return { tt: -1, ch: -1 };
+    if (isItemLikeTableView || !headers.length) return { tt: -1, ch: -1 };
     return {
       tt: resolveTaskTypeColumnIndex(headers),
       ch: resolveTaskChainColumnIndex(headers),
     };
-  }, [isItemTableView, headers]);
+  }, [isItemLikeTableView, headers]);
 
   const taskFilterOptions = useMemo(() => {
-    if (isItemTableView || !isTaskTableView || !currentAoa || currentAoa.length < 2) {
+    if (isItemLikeTableView || !isTaskTableView || !currentAoa || currentAoa.length < 2) {
       return { taskType: [] as string[], chain: [] as string[] };
     }
     const ttSet = new Set<string>();
@@ -2359,7 +2590,12 @@ export default function App() {
       }
     }
     return { taskType: [...ttSet], chain: [...chSet] };
-  }, [isItemTableView, isTaskTableView, currentAoa, taskFilterColIdx]);
+  }, [isItemLikeTableView, isTaskTableView, currentAoa, taskFilterColIdx]);
+
+  const storedItemLikeTableFilter = useMemo(() => {
+    if (isChestTableView) return config?.chestTableFilter ?? null;
+    return config?.itemTableFilter ?? null;
+  }, [isChestTableView, config?.chestTableFilter, config?.itemTableFilter]);
 
   const itemTypeRemarkDisplayKeys = useMemo(() => {
     const merged = mergeKeyOrder(
@@ -2377,15 +2613,15 @@ export default function App() {
   const itemTypeRemarkAllKeys = useMemo(() => {
     const merged = mergeKeyOrder(
       itemFilterOptions.typeRemark,
-      config?.itemTableFilter?.typeRemarkKeyOrder ?? null,
+      storedItemLikeTableFilter?.typeRemarkKeyOrder ?? null,
       sortTypeRemarkRest,
     );
     return mergeItemTypeRemarkOptionKeys(merged, itemFilterColIdx);
-  }, [itemFilterOptions.typeRemark, config?.itemTableFilter?.typeRemarkKeyOrder, itemFilterColIdx]);
+  }, [itemFilterOptions.typeRemark, storedItemLikeTableFilter?.typeRemarkKeyOrder, itemFilterColIdx]);
 
   const itemQualityAllKeys = useMemo(
-    () => mergeKeyOrder(itemFilterOptions.quality, config?.itemTableFilter?.qualityKeyOrder ?? null, sortQualityRest),
-    [itemFilterOptions.quality, config?.itemTableFilter?.qualityKeyOrder],
+    () => mergeKeyOrder(itemFilterOptions.quality, storedItemLikeTableFilter?.qualityKeyOrder ?? null, sortQualityRest),
+    [itemFilterOptions.quality, storedItemLikeTableFilter?.qualityKeyOrder],
   );
 
   const chipTypeRemarkPinnedBase = useMemo(() => {
@@ -2405,7 +2641,7 @@ export default function App() {
   }, [itemTypeRemarkAllKeys, itemFilterColIdx.season]);
 
   const chipTypeRemarkPinned = useMemo(() => {
-    const saved = config?.itemTableFilter?.chipBarTypeRemarkOrder;
+    const saved = storedItemLikeTableFilter?.chipBarTypeRemarkOrder;
     const allSet = new Set(chipTypeRemarkBarValidKeys);
     if (saved?.length) {
       return saved.filter((k) => allSet.has(k));
@@ -2416,17 +2652,17 @@ export default function App() {
     chipTypeRemarkBarValidKeys,
     itemTypeRemarkAllKeys,
     chipTypeRemarkPinnedBase,
-    config?.itemTableFilter?.chipBarTypeRemarkOrder,
+    storedItemLikeTableFilter?.chipBarTypeRemarkOrder,
   ]);
 
   const { pinned: chipQualityPinned, more: chipQualityMore } = useMemo(
     () =>
       splitChipBarPinnedAndMore(
         itemQualityAllKeys,
-        config?.itemTableFilter?.chipBarQualityOrder,
+        storedItemLikeTableFilter?.chipBarQualityOrder,
         itemQualityAllKeys,
       ),
-    [itemQualityAllKeys, config?.itemTableFilter?.chipBarQualityOrder],
+    [itemQualityAllKeys, storedItemLikeTableFilter?.chipBarQualityOrder],
   );
 
   const chipTypeRemarkMore = useMemo(() => {
@@ -2435,16 +2671,16 @@ export default function App() {
   }, [chipTypeRemarkBarValidKeys, chipTypeRemarkPinned]);
 
   const itemCustomKeywordAll = useMemo(
-    () => allCustomKeywordKeys(config?.itemTableFilter ?? emptyItemTableFilter()),
-    [config?.itemTableFilter],
+    () => allCustomKeywordKeys(storedItemLikeTableFilter ?? emptyItemTableFilter()),
+    [storedItemLikeTableFilter],
   );
 
   const chipItemCustomKeywordPinned = useMemo(() => {
     const allSet = new Set(itemCustomKeywordAll);
-    const saved = config?.itemTableFilter?.chipBarCustomKeywordOrder;
+    const saved = storedItemLikeTableFilter?.chipBarCustomKeywordOrder;
     if (saved?.length) return saved.filter((k) => allSet.has(k));
     return [];
-  }, [itemCustomKeywordAll, config?.itemTableFilter?.chipBarCustomKeywordOrder]);
+  }, [itemCustomKeywordAll, storedItemLikeTableFilter?.chipBarCustomKeywordOrder]);
 
   const chipItemCustomKeywordMore = useMemo(() => {
     const pin = new Set(chipItemCustomKeywordPinned);
@@ -2535,10 +2771,10 @@ export default function App() {
   );
 
   const activeItemTableFilter = useMemo(() => {
-    if (!isItemTableView) return null;
+    if (!isItemLikeTableView) return null;
     if (itemFilterModalOpen) return itemFilterDraft;
-    return config?.itemTableFilter ?? null;
-  }, [isItemTableView, itemFilterModalOpen, itemFilterDraft, config?.itemTableFilter]);
+    return storedItemLikeTableFilter;
+  }, [isItemLikeTableView, itemFilterModalOpen, itemFilterDraft, storedItemLikeTableFilter]);
 
   const activeTaskTableFilter = useMemo(() => {
     if (!isTaskTableView) return null;
@@ -2552,19 +2788,20 @@ export default function App() {
     activeView.kind !== "rankUp" &&
     activeView.kind !== "uploadConfig" &&
     activeView.kind !== "taskMapCheck" &&
-    (isItemTableView || isTaskTableView);
+    activeView.kind !== "taskIssues" &&
+    (isItemLikeTableView || isTaskTableView);
 
   const activeColumnValueFilters = useMemo(() => {
-    if (isItemTableView) return activeItemTableFilter?.columnValueFilters ?? null;
+    if (isItemLikeTableView) return activeItemTableFilter?.columnValueFilters ?? null;
     if (isTaskTableView) return activeTaskTableFilter?.columnValueFilters ?? null;
     return null;
-  }, [isItemTableView, isTaskTableView, activeItemTableFilter, activeTaskTableFilter]);
+  }, [isItemLikeTableView, isTaskTableView, activeItemTableFilter, activeTaskTableFilter]);
 
   const columnFilterPopoverData = useMemo(() => {
     if (!columnFilterPopover) return null;
     const { colIndex, headerName } = columnFilterPopover;
     const key = columnFilterKey(headerName, colIndex);
-    const filters = isItemTableView
+    const filters = isItemLikeTableView
       ? activeItemTableFilter?.columnValueFilters
       : isTaskTableView
         ? activeTaskTableFilter?.columnValueFilters
@@ -2576,7 +2813,7 @@ export default function App() {
   }, [
     columnFilterPopover,
     dataBodyRows,
-    isItemTableView,
+    isItemLikeTableView,
     isTaskTableView,
     activeItemTableFilter,
     activeTaskTableFilter,
@@ -2599,7 +2836,7 @@ export default function App() {
   );
 
   const filteredBodyRows = useMemo(() => {
-    if (isItemTableView) {
+    if (isItemLikeTableView) {
       if (itemTableFilterIsInactive(activeItemTableFilter)) return dataBodyRows;
       const f = activeItemTableFilter!;
       return dataBodyRows.filter(({ row }) => rowPassesItemTableFilter(row, f, itemFilterColIdx, headers));
@@ -2609,7 +2846,7 @@ export default function App() {
     return dataBodyRows.filter(({ row }) => rowPassesTaskTableFilter(row, tf, taskFilterColIdx, headers));
   }, [
     dataBodyRows,
-    isItemTableView,
+    isItemLikeTableView,
     isTaskTableView,
     activeItemTableFilter,
     activeTaskTableFilter,
@@ -2618,36 +2855,46 @@ export default function App() {
     headers,
   ]);
 
-  const pinActive = isItemTableView
-    ? pinnedRowOrder.item.length > 0
-    : isTaskTableView
-      ? pinnedRowOrder.task.length > 0
-      : false;
+  const pinActive = isChestTableView
+    ? pinnedRowOrder.chest.length > 0
+    : isItemTableView
+      ? pinnedRowOrder.item.length > 0
+      : isTaskTableView
+        ? pinnedRowOrder.task.length > 0
+        : false;
 
   const displayBodyRows = useMemo(() => {
-    const order = isItemTableView ? pinnedRowOrder.item : isTaskTableView ? pinnedRowOrder.task : [];
+    const order = isChestTableView
+      ? pinnedRowOrder.chest
+      : isItemTableView
+        ? pinnedRowOrder.item
+        : isTaskTableView
+          ? pinnedRowOrder.task
+          : [];
     return computeDisplayBodyRows(filteredBodyRows, tableSort, order, compareDataCells);
   }, [
     filteredBodyRows,
     tableSort,
     isItemTableView,
+    isChestTableView,
     isTaskTableView,
     pinnedRowOrder.item,
     pinnedRowOrder.task,
+    pinnedRowOrder.chest,
   ]);
 
   const visibleDataIdxs = useMemo(() => displayBodyRows.map((r) => r.dataIdx), [displayBodyRows]);
 
   const selectableVisibleDataIdxs = useMemo(() => {
     if (!currentAoa?.length) return [] as number[];
-    if (isItemTableView) {
+    if (isItemLikeTableView) {
       return visibleDataIdxs.filter((di) => isSelectableTableDataRow(currentAoa, di, "item"));
     }
     if (isTaskTableView) {
       return visibleDataIdxs.filter((di) => isSelectableTableDataRow(currentAoa, di, "task"));
     }
     return visibleDataIdxs;
-  }, [visibleDataIdxs, currentAoa, isItemTableView, isTaskTableView]);
+  }, [visibleDataIdxs, currentAoa, isItemLikeTableView, isTaskTableView]);
 
   const visibleSelectedCount = useMemo(() => {
     let n = 0;
@@ -2664,16 +2911,19 @@ export default function App() {
 
   const openTableFilterModal = useCallback(() => {
     if (!config) return;
-    if (isItemTableView) {
-      setItemFilterDraft(cloneItemTableFilter(config.itemTableFilter));
-      setItemFilterQuickQuery(config.itemTableFilter?.rowKeyword?.trim() ?? "");
+    if (isItemLikeTableView) {
+      const f = isChestTableView ? (config.chestTableFilter ?? null) : config.itemTableFilter;
+      setItemFilterDraft(cloneItemTableFilter(f));
+      setItemFilterQuickQuery(f?.rowKeyword?.trim() ?? "");
+      setItemFilterQuickRaw(null);
       setItemFilterModalOpen(true);
     } else if (isTaskTableView) {
       setTaskFilterDraft(cloneTaskTableFilter(config.taskTableFilter));
       setTaskFilterQuickQuery(config.taskTableFilter?.rowKeyword?.trim() ?? "");
+      setTaskFilterQuickRaw(null);
       setTaskFilterModalOpen(true);
     }
-  }, [config, isItemTableView, isTaskTableView]);
+  }, [config, isItemLikeTableView, isChestTableView, isTaskTableView]);
 
   const dismissItemFilterModal = useCallback(() => {
     if (itemFilterChipSaveHintTimerRef.current) {
@@ -2711,7 +2961,7 @@ export default function App() {
     }, 3000);
   }, []);
 
-  const pinSelectedRowsAfterFilterChange = useCallback((table: "item" | "task") => {
+  const pinSelectedRowsAfterFilterChange = useCallback((table: "item" | "task" | "chest") => {
     if (pinAutoSuppressedRef.current) return;
     const selected = selectedRowsRef.current;
     const visible = selectableVisibleDataIdxsRef.current.filter((di) => selected.has(di));
@@ -2754,25 +3004,44 @@ export default function App() {
       }
       const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
       if (!opts?.keepModalOpen) setItemFilterModalOpen(false);
+      const pinTable = isChestTableView ? "chest" : "item";
       const applyFilterUpdate = () => {
-        setConfig((c) => (c ? { ...c, itemTableFilter: nextFilter } : c));
-        pinSelectedRowsAfterFilterChange("item");
+        setConfig((c) => {
+          if (!c) return c;
+          return isChestTableView
+            ? { ...c, chestTableFilter: nextFilter }
+            : { ...c, itemTableFilter: nextFilter };
+        });
+        pinSelectedRowsAfterFilterChange(pinTable);
       };
       if (opts?.immediate) {
         applyFilterUpdate();
       } else {
         startTransition(applyFilterUpdate);
       }
-      void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
+      const saveFn = isChestTableView ? saveChestTableFilterToDisk : saveItemTableFilterToDisk;
+      void saveFn(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
     },
-    [config, itemFilterDraft, dataBodyRows, itemFilterColIdx, headers, saveItemTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
+    [
+      config,
+      itemFilterDraft,
+      dataBodyRows,
+      itemFilterColIdx,
+      headers,
+      isChestTableView,
+      saveItemTableFilterToDisk,
+      saveChestTableFilterToDisk,
+      push,
+      pinSelectedRowsAfterFilterChange,
+    ],
   );
 
   const updateItemFilterPersist = useCallback(
     (updater: (prev: ItemTableFilter) => ItemTableFilter) => {
       setConfig((c) => {
         if (!c) return c;
-        const base = c.itemTableFilter ? cloneItemTableFilter(c.itemTableFilter) : emptyItemTableFilter();
+        const stored = isChestTableView ? c.chestTableFilter : c.itemTableFilter;
+        const base = stored ? cloneItemTableFilter(stored) : emptyItemTableFilter();
         const next = updater(base);
         if (itemFilterModalOpen) setItemFilterDraft(next);
         const d = next;
@@ -2808,14 +3077,28 @@ export default function App() {
           }
         }
         const nextFilter = itemTableFilterIsInactive(d) && !hasCustomItemKeyOrder(d) ? null : d;
+        const pinTable = isChestTableView ? "chest" : "item";
+        const saveFn = isChestTableView ? saveChestTableFilterToDisk : saveItemTableFilterToDisk;
         queueMicrotask(() => {
-          void saveItemTableFilterToDisk(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
-          pinSelectedRowsAfterFilterChange("item");
+          void saveFn(nextFilter).catch((e) => push(`筛选保存失败: ${e}`));
+          pinSelectedRowsAfterFilterChange(pinTable);
         });
-        return { ...c, itemTableFilter: nextFilter };
+        return isChestTableView
+          ? { ...c, chestTableFilter: nextFilter }
+          : { ...c, itemTableFilter: nextFilter };
       });
     },
-    [itemFilterModalOpen, dataBodyRows, itemFilterColIdx, headers, saveItemTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
+    [
+      itemFilterModalOpen,
+      dataBodyRows,
+      itemFilterColIdx,
+      headers,
+      isChestTableView,
+      saveItemTableFilterToDisk,
+      saveChestTableFilterToDisk,
+      push,
+      pinSelectedRowsAfterFilterChange,
+    ],
   );
 
   const toggleItemFilterTypeRemarkKey = useCallback(
@@ -2916,7 +3199,7 @@ export default function App() {
   const setColumnValueFilterKeys = useCallback(
     (colIndex: number, headerName: string, selectedKeys: string[]) => {
       const key = columnFilterKey(headerName, colIndex);
-      if (isItemTableView) {
+      if (isItemLikeTableView) {
         updateItemFilterPersist((d) => {
           const next = cloneColumnValueFilters(d.columnValueFilters);
           if (selectedKeys.length === 0) delete next[key];
@@ -2934,7 +3217,7 @@ export default function App() {
         });
       }
     },
-    [isItemTableView, isTaskTableView, updateItemFilterPersist, updateTaskFilterPersist],
+    [isItemLikeTableView, isTaskTableView, updateItemFilterPersist, updateTaskFilterPersist],
   );
 
   const applyColumnValueFilter = useCallback(
@@ -3056,12 +3339,21 @@ export default function App() {
   }, []);
 
   const saveItemCustomKeywordFromDraft = useCallback(() => {
-    const q = itemFilterQuickQuery.trim();
+    if (itemFilterQuickQuery === FILTER_PASTE_DISPLAY_FAIL || (isFilterPasteDisplayPlaceholder(itemFilterQuickQuery) && !itemFilterQuickRaw)) {
+      push("识别失败");
+      return;
+    }
+    const source = itemFilterQuickRaw ?? itemFilterQuickQuery;
+    const q = normalizeFilterKeywordForStorage(source);
     if (!q) {
       push("请输入搜索关键字");
       return;
     }
-    const hasMatch = dataBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
+    const hasMatch = rowHasAnyKeywordHit(
+      dataBodyRows.map(({ row }) => row),
+      q,
+      resolveItemIdColumnIndex(headers),
+    );
     if (!hasMatch) {
       push("无包含该关键字的行");
       return;
@@ -3069,12 +3361,17 @@ export default function App() {
     const next = persistSaveCustomKeyword(itemFilterDraft, q);
     setItemFilterDraft(next);
     updateItemFilterPersist((d) => (itemFilterModalOpen ? next : persistSaveCustomKeyword(d, q)));
-    showItemFilterChipSaveHint(`已保存到筛选项「${q}」`);
+    const chipLabel = formatCustomKeywordChipLabel(q);
+    showItemFilterChipSaveHint(`已保存到筛选项「${chipLabel}」`);
+    setItemFilterQuickQuery("");
+    setItemFilterQuickRaw(null);
   }, [
     itemFilterQuickQuery,
+    itemFilterQuickRaw,
     itemFilterDraft,
     itemFilterModalOpen,
     dataBodyRows,
+    headers,
     persistSaveCustomKeyword,
     updateItemFilterPersist,
     push,
@@ -3082,12 +3379,21 @@ export default function App() {
   ]);
 
   const saveTaskCustomKeywordFromDraft = useCallback(() => {
-    const q = taskFilterQuickQuery.trim();
+    if (taskFilterQuickQuery === FILTER_PASTE_DISPLAY_FAIL || (isFilterPasteDisplayPlaceholder(taskFilterQuickQuery) && !taskFilterQuickRaw)) {
+      push("识别失败");
+      return;
+    }
+    const source = taskFilterQuickRaw ?? taskFilterQuickQuery;
+    const q = normalizeFilterKeywordForStorage(source);
     if (!q) {
       push("请输入搜索关键字");
       return;
     }
-    const hasMatch = dataBodyRows.some(({ row }) => rowMatchesKeyword(row, q));
+    const hasMatch = rowHasAnyKeywordHit(
+      dataBodyRows.map(({ row }) => row),
+      q,
+      resolveTaskIdColumnIndex(headers),
+    );
     if (!hasMatch) {
       push("无包含该关键字的行");
       return;
@@ -3095,12 +3401,17 @@ export default function App() {
     const next = persistSaveCustomKeywordTask(taskFilterDraft, q);
     setTaskFilterDraft(next);
     updateTaskFilterPersist((d) => (taskFilterModalOpen ? next : persistSaveCustomKeywordTask(d, q)));
-    showTaskFilterChipSaveHint(`已保存到筛选项「${q}」`);
+    const chipLabel = formatCustomKeywordChipLabel(q);
+    showTaskFilterChipSaveHint(`已保存到筛选项「${chipLabel}」`);
+    setTaskFilterQuickQuery("");
+    setTaskFilterQuickRaw(null);
   }, [
     taskFilterQuickQuery,
+    taskFilterQuickRaw,
     taskFilterDraft,
     taskFilterModalOpen,
     dataBodyRows,
+    headers,
     persistSaveCustomKeywordTask,
     updateTaskFilterPersist,
     push,
@@ -3127,15 +3438,66 @@ export default function App() {
     [config, taskFilterDraft, dataBodyRows, taskFilterColIdx, headers, saveTaskTableFilterToDisk, push, pinSelectedRowsAfterFilterChange],
   );
 
+  const applyItemFilterPaste = useCallback(
+    (text: string) => {
+      if (!isBulkyFilterPaste(text)) {
+        setItemFilterQuickRaw(null);
+        setItemFilterQuickQuery(text);
+        return;
+      }
+      const normalized = normalizeFilterKeywordForStorage(text);
+      const idCol = resolveItemIdColumnIndex(headers);
+      const rows = dataBodyRows.map(({ row }) => row);
+      const stats = analyzeFilterPasteMatches(rows, normalized, idCol);
+      const display =
+        formatFilterPasteInputDisplay(text, stats.matched.length, stats.tokens.length) ??
+        FILTER_PASTE_DISPLAY_FAIL;
+      setItemFilterQuickQuery(display);
+      setItemFilterQuickRaw(isFilterPasteSuccessDisplay(display) ? normalized : null);
+      if (display === FILTER_PASTE_DISPLAY_FAIL) {
+        push("识别失败");
+      } else if (stats.unmatched.length > 0) {
+        push(formatUnmatchedFilterTokensHint(stats.unmatched));
+      }
+    },
+    [dataBodyRows, headers, push],
+  );
+
+  const applyTaskFilterPaste = useCallback(
+    (text: string) => {
+      if (!isBulkyFilterPaste(text)) {
+        setTaskFilterQuickRaw(null);
+        setTaskFilterQuickQuery(text);
+        return;
+      }
+      const normalized = normalizeFilterKeywordForStorage(text);
+      const idCol = resolveTaskIdColumnIndex(headers);
+      const rows = dataBodyRows.map(({ row }) => row);
+      const stats = analyzeFilterPasteMatches(rows, normalized, idCol);
+      const display =
+        formatFilterPasteInputDisplay(text, stats.matched.length, stats.tokens.length) ??
+        FILTER_PASTE_DISPLAY_FAIL;
+      setTaskFilterQuickQuery(display);
+      setTaskFilterQuickRaw(isFilterPasteSuccessDisplay(display) ? normalized : null);
+      if (display === FILTER_PASTE_DISPLAY_FAIL) {
+        push("识别失败");
+      } else if (stats.unmatched.length > 0) {
+        push(formatUnmatchedFilterTokensHint(stats.unmatched));
+      }
+    },
+    [dataBodyRows, headers, push],
+  );
+
   const clearSavedTableFilter = useCallback(() => {
     if (!config) return;
-    if (isItemTableView) {
+    if (isItemLikeTableView) {
       const base = activeItemTableFilter
         ? cloneItemTableFilter(activeItemTableFilter)
         : emptyItemTableFilter();
       const cleared = clearItemFilterSelectionsKeepOrder(base);
       setItemFilterDraft(cleared);
       setItemFilterQuickQuery("");
+      setItemFilterQuickRaw(null);
       setItemFilterModalOpen(false);
       commitItemFilterSave(cleared, { immediate: true });
     } else if (isTaskTableView) {
@@ -3145,13 +3507,14 @@ export default function App() {
       const cleared = clearTaskFilterSelectionsKeepOrder(base);
       setTaskFilterDraft(cleared);
       setTaskFilterQuickQuery("");
+      setTaskFilterQuickRaw(null);
       setTaskFilterModalOpen(false);
       commitTaskFilterSave(cleared, { immediate: true });
     }
     push("已清空筛选");
   }, [
     config,
-    isItemTableView,
+    isItemLikeTableView,
     isTaskTableView,
     activeItemTableFilter,
     activeTaskTableFilter,
@@ -3173,7 +3536,7 @@ export default function App() {
         settingsOpen,
         hasConfig: Boolean(config),
         hasCurrentAoa: Boolean(currentAoa),
-        isItemTableView,
+        isItemTableView: isItemLikeTableView,
         isTaskTableView,
         itemFilterModalOpen: itemFilterModalOpen,
         taskFilterModalOpen: taskFilterModalOpen,
@@ -3182,13 +3545,13 @@ export default function App() {
 
       if (shouldOpenAppFilterModal(ctx)) {
         openTableFilterModal();
-        if (isItemTableView) itemFilterQuickFocusPendingRef.current = true;
+        if (isItemLikeTableView) itemFilterQuickFocusPendingRef.current = true;
         else if (isTaskTableView) taskFilterQuickFocusPendingRef.current = true;
         return;
       }
 
       if (shouldRefocusFilterQuickSearch(ctx)) {
-        if (isItemTableView) itemFilterQuickInputRef.current?.focus();
+        if (isItemLikeTableView) itemFilterQuickInputRef.current?.focus();
         else if (isTaskTableView) taskFilterQuickInputRef.current?.focus();
       }
     };
@@ -3199,7 +3562,7 @@ export default function App() {
     settingsOpen,
     config,
     currentAoa,
-    isItemTableView,
+    isItemLikeTableView,
     isTaskTableView,
     itemFilterModalOpen,
     taskFilterModalOpen,
@@ -3236,10 +3599,10 @@ export default function App() {
   }, [itemFilterModalOpen, itemFilterDraft.typeRemarkKeys]);
 
   const savedItemRowKeyword = useMemo(() => {
-    if (!isItemTableView) return null;
-    const k = config?.itemTableFilter?.rowKeyword?.trim();
+    if (!isItemLikeTableView) return null;
+    const k = storedItemLikeTableFilter?.rowKeyword?.trim();
     return k || null;
-  }, [isItemTableView, config?.itemTableFilter?.rowKeyword]);
+  }, [isItemLikeTableView, storedItemLikeTableFilter?.rowKeyword]);
 
   const savedTaskRowKeyword = useMemo(() => {
     if (!isTaskTableView) return null;
@@ -3248,14 +3611,15 @@ export default function App() {
   }, [isTaskTableView, config?.taskTableFilter?.rowKeyword]);
 
   const hasActiveTableFilter = useMemo(() => {
-    if (isItemTableView) return !itemTableFilterIsInactive(config?.itemTableFilter ?? null);
+    if (isItemLikeTableView) return !itemTableFilterIsInactive(storedItemLikeTableFilter);
     if (isTaskTableView) return !taskTableFilterIsInactive(config?.taskTableFilter ?? null);
     return false;
-  }, [isItemTableView, isTaskTableView, config?.itemTableFilter, config?.taskTableFilter]);
+  }, [isItemLikeTableView, isTaskTableView, storedItemLikeTableFilter, config?.taskTableFilter]);
 
   const freezeAnchorHeader = useMemo(() => {
     if (!config) return null;
     if (activeView.kind === "item") return config.freezeThroughItemHeader;
+    if (activeView.kind === "chest") return config.freezeThroughChestHeader ?? null;
     if (activeView.kind === "task") return config.freezeThroughTaskHeader;
     if (activeView.kind === "template" || activeView.kind === "snapshot") {
       return config.savedTemplates.find((t) => t.id === activeView.id)?.freezeThroughHeader ?? null;
@@ -3302,7 +3666,7 @@ export default function App() {
     selectableVisibleDataIdxs.length,
     allVisibleSelected,
     someVisibleSelected,
-    isItemTableView,
+    isItemLikeTableView,
     isTaskTableView,
     pinActive,
     visibleColIndices.length,
@@ -3324,7 +3688,10 @@ export default function App() {
       lefts.push(acc);
       acc += cells[i].offsetWidth;
     }
-    setStickyCellLeftPx(lefts);
+    setStickyCellLeftPx((prev) => {
+      if (prev.length === lefts.length && prev.every((v, i) => v === lefts[i])) return prev;
+      return lefts;
+    });
   }, [
     freezeVisIdx,
     visibleColIndices,
@@ -3534,7 +3901,12 @@ export default function App() {
     if (visibleSelectedCount > 0) {
       const toAdd = selectableVisibleDataIdxs.filter((di) => selectedRows.has(di));
       pinAutoSuppressedRef.current = false;
-      if (isItemTableView) {
+      if (isChestTableView) {
+        setPinnedRowOrder((p) => ({
+          ...p,
+          chest: pinSelectionToFront(p.chest, toAdd, selectedRowOrder),
+        }));
+      } else if (isItemTableView) {
         setPinnedRowOrder((p) => ({
           ...p,
           item: pinSelectionToFront(p.item, toAdd, selectedRowOrder),
@@ -3548,7 +3920,9 @@ export default function App() {
       scrollTableToTop();
     } else if (pinActive) {
       pinAutoSuppressedRef.current = true;
-      if (isItemTableView) {
+      if (isChestTableView) {
+        setPinnedRowOrder((p) => ({ ...p, chest: [] }));
+      } else if (isItemTableView) {
         setPinnedRowOrder((p) => ({ ...p, item: [] }));
       } else if (isTaskTableView) {
         setPinnedRowOrder((p) => ({ ...p, task: [] }));
@@ -3560,13 +3934,14 @@ export default function App() {
     selectedRows,
     selectedRowOrder,
     isItemTableView,
+    isChestTableView,
     isTaskTableView,
     pinActive,
     scrollTableToTop,
   ]);
 
   const canBoxSelect =
-    Boolean(currentAoa) && activeView.kind !== "addExp" && activeView.kind !== "rankUp" && activeView.kind !== "uploadConfig" && activeView.kind !== "taskMapCheck";
+    Boolean(currentAoa) && activeView.kind !== "addExp" && activeView.kind !== "rankUp" && activeView.kind !== "uploadConfig" && activeView.kind !== "taskMapCheck" && activeView.kind !== "taskIssues";
 
   const isBoxSelectInteractiveTarget = (t: EventTarget | null): boolean => {
     const el = t instanceof HTMLElement ? t : null;
@@ -3771,17 +4146,24 @@ export default function App() {
 
   const toggleHideColumn = async (header: string, hide: boolean) => {
     if (!config || activeView.kind === "template" || activeView.kind === "snapshot") return;
-    if (activeView.kind === "item" || activeView.kind === "task") {
+    if (activeView.kind === "item" || activeView.kind === "task" || activeView.kind === "chest") {
       if (headerCannotHide(activeView.kind, header)) return;
     }
-    const key = activeView.kind === "item" ? "hiddenItemColumns" : "hiddenTaskColumns";
-    const cur = new Set(config[key]);
+    const key =
+      activeView.kind === "item"
+        ? "hiddenItemColumns"
+        : activeView.kind === "chest"
+          ? "hiddenChestColumns"
+          : "hiddenTaskColumns";
+    const cur = new Set(config[key] ?? []);
     if (hide) cur.add(header);
     else cur.delete(header);
     const next = { ...config, [key]: [...cur] };
     if (hide) {
       if (activeView.kind === "item" && config.freezeThroughItemHeader === header) {
         next.freezeThroughItemHeader = null;
+      } else if (activeView.kind === "chest" && config.freezeThroughChestHeader === header) {
+        next.freezeThroughChestHeader = null;
       } else if (activeView.kind === "task" && config.freezeThroughTaskHeader === header) {
         next.freezeThroughTaskHeader = null;
       }
@@ -3792,6 +4174,55 @@ export default function App() {
   const closeCtx = () => {
     setCtxMenu(null);
     setColumnHeaderMenu(null);
+  };
+
+  const openConditionTranslateFromContext = () => {
+    const dataIdx = ctxMenu?.dataIdx;
+    closeCtx();
+    if (dataIdx == null || !currentAoa || !config) return;
+    const refs = parseTaskConditionRefs(currentAoa, dataIdx);
+    if (!refs) {
+      notify("无法读取该行任务 ID", { action: "翻译完成条件", outcome: "failure" });
+      return;
+    }
+    void (async () => {
+      const root = config.excelWorkspaceRoot.trim();
+      let resolved = refs;
+      try {
+        const taskPath = await resolveTaskCsvPath(root);
+        if (taskPath) {
+          const taskCsv = await invoke<string>("read_text_file", { path: taskPath });
+          resolved = mergeTaskConditionRefsWithCsv(refs, parseTaskCsvAll(taskCsv));
+        }
+      } catch {
+        /* optional */
+      }
+      let rows: ReturnType<typeof parseConditionCsvAll> = [];
+      try {
+        const csvText = await invoke<string>("read_text_file", { path: conditionCsvPath(root) });
+        rows = parseConditionCsvAll(csvText);
+      } catch {
+        /* optional */
+      }
+      try {
+        const b64 = await invoke<string>("read_file_base64", { path: excelMissionPath(root) });
+        const sheet = readOptionalSheetFromWorkbook(b64, "Condition");
+        if (sheet) {
+          const xlsxRows = parseConditionAoaAll(sheet);
+          if (xlsxRows.length > 0) rows = xlsxRows;
+        }
+      } catch {
+        /* optional */
+      }
+      if (resolved.conditionIds.length > 0 && rows.length === 0) {
+        notify("未找到 Condition 配置", { action: "翻译完成条件", outcome: "failure" });
+        return;
+      }
+      setConditionTranslate({
+        taskId: resolved.taskId,
+        result: translateTaskConditionIds(resolved.conditionIds, conditionRowsToMap(rows), resolved.relationRaw),
+      });
+    })();
   };
 
   const logGmt = useCallback(
@@ -3926,7 +4357,7 @@ export default function App() {
     e.preventDefault();
     const dataIdx = resolveTableContextDataIdx(e.target);
     if (dataIdx == null && selectedRows.size === 0) return;
-    if (!isItemTableView && !isTaskTableView) return;
+    if (!isItemLikeTableView && !isTaskTableView) return;
     setColumnHeaderMenu(null);
     setCtxMenu({ x: e.clientX, y: e.clientY, dataIdx });
   };
@@ -3962,6 +4393,14 @@ export default function App() {
 
   const submitItemPriceModal = async (changes: { baseValue?: number; stdPrice?: number }) => {
     if (!config || !itemPriceModal) return;
+    if (isPreliveGmtEnabled(config)) {
+      notify(gtopBlockedByPreliveMessage(config.gmtEnvName), {
+        action: "GTOP 修改物品价格",
+        outcome: "failure",
+        context: config.gmtEnvName ?? undefined,
+      });
+      return;
+    }
     setItemPriceSubmitting(true);
     try {
       const result = await modifyItemPricesViaGtop({
@@ -3988,6 +4427,14 @@ export default function App() {
     }
     const dataIdx = ctxMenu.dataIdx;
     closeCtx();
+    if (isPreliveGmtEnabled(config)) {
+      notify(gtopBlockedByPreliveMessage(config.gmtEnvName), {
+        action: "GTOP 还原默认物品价格",
+        outcome: "failure",
+        context: config.gmtEnvName ?? undefined,
+      });
+      return;
+    }
     const itemId = parseItemRowId(currentAoa, dataIdx);
     if (!itemId) {
       push("无法还原：缺少物品 ID");
@@ -4041,6 +4488,8 @@ export default function App() {
     setColumnHeaderMenu(null);
     if (activeView.kind === "item") {
       await persist({ ...config, freezeThroughItemHeader: headerName });
+    } else if (activeView.kind === "chest") {
+      await persist({ ...config, freezeThroughChestHeader: headerName });
     } else if (activeView.kind === "task") {
       await persist({ ...config, freezeThroughTaskHeader: headerName });
     } else if (activeView.kind === "template" || activeView.kind === "snapshot") {
@@ -4986,6 +5435,14 @@ export default function App() {
 
   const acceptSelectedTasksViaGtop = useCallback(async () => {
     if (!config) return;
+    if (isPreliveGmtEnabled(config)) {
+      notify(gtopBlockedByPreliveMessage(config.gmtEnvName), {
+        action: "GTOP 接取",
+        outcome: "failure",
+        context: config.gmtEnvName ?? undefined,
+      });
+      return;
+    }
     const result = await acceptTasksViaGtop({
       config,
       gtopLoggedIn,
@@ -5018,6 +5475,14 @@ export default function App() {
     if (!config) return;
     if (!isTaskTableView) {
       push("请在任务表视图中操作");
+      return;
+    }
+    if (isPreliveGmtEnabled(config)) {
+      notify(gtopBlockedByPreliveMessage(config.gmtEnvName), {
+        action: "GTOP 恢复默认 task.csv",
+        outcome: "failure",
+        context: config.gmtEnvName ?? undefined,
+      });
       return;
     }
     if (!gtopLoggedIn) {
@@ -5073,6 +5538,14 @@ export default function App() {
     serverLabel: string;
   } | null => {
     if (!config) return null;
+    if (isPreliveGmtEnabled(config)) {
+      notify(gtopBlockedByPreliveMessage(config.gmtEnvName), {
+        action: "GTOP 上传配置",
+        outcome: "failure",
+        context: config.gmtEnvName ?? undefined,
+      });
+      return null;
+    }
     if (!gtopLoggedIn) {
       notify("未登录 GTOP", {
         action: "GTOP 上传配置",
@@ -5306,15 +5779,15 @@ export default function App() {
     [config, ensureGtopUploadReady, gtopLoggedIn, notify, persist, push, uploadConfigBusy],
   );
 
-  const runTaskMapTagCheck = useCallback(async () => {
+  const runTaskMapTagCheck = useCallback(async (silent = false) => {
     if (!config || taskMapCheckBusy) return;
     const root = config.excelWorkspaceRoot?.trim();
     if (!root) {
-      notify("未配置工作区", { action: "任务地图检查", outcome: "failure" });
+      if (!silent) notify("未配置工作区", { action: "任务地图检查", outcome: "failure" });
       return;
     }
     setTaskMapCheckBusy(true);
-    setTagCheckError(null);
+    if (!silent) setTagCheckError(null);
     try {
       let missionB64: string | null = null;
       try {
@@ -5324,22 +5797,32 @@ export default function App() {
       }
       const report = await loadTagCheckReportFromWorkspace(root, missionB64);
       setTagCheckReport(report);
-      notify(
-        `检查完成：${report.summary.errorCount} 错误，${report.summary.warnCount} 警告`,
-        {
-          action: "任务地图检查",
-          outcome: report.summary.errorCount > 0 ? "failure" : "success",
-        },
-      );
+      setTagCheckError(null);
+      if (!silent) {
+        notify(
+          `检查完成：${report.summary.errorCount} 错误，${report.summary.warnCount} 警告`,
+          {
+            action: "任务地图检查",
+            outcome: report.summary.errorCount > 0 ? "failure" : "success",
+          },
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setTagCheckError(msg);
-      setTagCheckReport(null);
-      notify(msg, { action: "任务地图检查", outcome: "failure" });
+      if (silent) {
+        console.warn("[easydone] 任务配置检查失败:", msg);
+      } else {
+        setTagCheckError(msg);
+        setTagCheckReport(null);
+        notify(msg, { action: "任务地图检查", outcome: "failure" });
+      }
     } finally {
       setTaskMapCheckBusy(false);
     }
   }, [config, notify, taskMapCheckBusy]);
+  afterExcelLoadRef.current = () => {
+    void runTaskMapTagCheck(true);
+  };
 
   const exportTaskMapTagCheckCsv = useCallback(async () => {
     if (!tagCheckReport || tagCheckReport.issues.length === 0) return;
@@ -5363,6 +5846,15 @@ export default function App() {
       notify(msg, { action: "导出任务地图检查结果", outcome: "failure" });
     }
   }, [notify, tagCheckReport]);
+
+  const currentIssueSignature = issueReportSignature(tagCheckReport?.issues ?? []);
+  const taskIssueAlertActive = isTaskIssueAlertActive(currentIssueSignature, ackedIssueSignature);
+
+  const selectTaskIssuesView = useCallback(() => {
+    if (filterSheetOpen) return;
+    setAckedIssueSignature(issueReportSignature(tagCheckReport?.issues ?? []));
+    switchActiveView({ kind: "taskIssues" });
+  }, [filterSheetOpen, tagCheckReport, switchActiveView]);
 
   const completeNextTaskFromPinned = () => {
     if (activeView.kind !== "task") {
@@ -5420,7 +5912,7 @@ export default function App() {
       <div className="modal-back">
         <div className="modal">
           <h2>设置向导</h2>
-          <p className="help">选择 Excel 工作区根目录，须包含 Excel\\Item.xlsx 与 Excel\\Mission.xlsx。</p>
+          <p className="help">选择 Excel 工作区根目录，须包含 Excel\\Item.xlsx 与 Excel\\Mission.xlsx；可选 Excel\\Chest.xlsx（宝箱/礼包，将并入全部道具末尾）。</p>
           <div className="field">
             <label>Excel 工作区</label>
             <div className="path">{ex || "未选择"}</div>
@@ -5473,9 +5965,19 @@ export default function App() {
 
   const HiddenFieldsPanel = () => {
     if (!hiddenPanel || !config) return null;
-    const key = hiddenPanel === "item" ? "hiddenItemColumns" : "hiddenTaskColumns";
-    const hs = hiddenPanel === "item" ? itemAoa?.[0]?.map((h) => cellStr(h)) ?? [] : taskAoa?.[0]?.map((h) => cellStr(h)) ?? [];
-    const rawSaved = config[key];
+    const key =
+      hiddenPanel === "item"
+        ? "hiddenItemColumns"
+        : hiddenPanel === "chest"
+          ? "hiddenChestColumns"
+          : "hiddenTaskColumns";
+    const hs =
+      hiddenPanel === "item"
+        ? itemAoa?.[0]?.map((h) => cellStr(h)) ?? []
+        : hiddenPanel === "chest"
+          ? chestAoa?.[0]?.map((h) => cellStr(h)) ?? []
+          : taskAoa?.[0]?.map((h) => cellStr(h)) ?? [];
+    const rawSaved = config[key] ?? [];
     const savedHidden = rawSaved.filter((h) => !headerCannotHide(hiddenPanel, h));
     const draftCols = (hiddenPanelDraft ?? savedHidden).filter((h) => !headerCannotHide(hiddenPanel, h));
     const hidden = new Set(draftCols);
@@ -5493,7 +5995,10 @@ export default function App() {
       >
         <div className="modal modal--sheet modal-hidden-fields" onMouseDown={(e) => e.stopPropagation()}>
           <div className="modal-header-row">
-            <h2>隐藏字段 · {hiddenPanel === "item" ? "道具" : "任务"}</h2>
+            <h2>
+              隐藏字段 ·{" "}
+              {hiddenPanel === "item" ? "道具" : hiddenPanel === "chest" ? "宝箱/礼包" : "任务"}
+            </h2>
             <div className="btn-row">
               <button
                 type="button"
@@ -5516,6 +6021,13 @@ export default function App() {
                     let nextCfg: AppConfig = { ...config, [key]: cols };
                     if (hiddenPanel === "item" && nextCfg.freezeThroughItemHeader && cols.includes(nextCfg.freezeThroughItemHeader)) {
                       nextCfg = { ...nextCfg, freezeThroughItemHeader: null };
+                    }
+                    if (
+                      hiddenPanel === "chest" &&
+                      nextCfg.freezeThroughChestHeader &&
+                      cols.includes(nextCfg.freezeThroughChestHeader)
+                    ) {
+                      nextCfg = { ...nextCfg, freezeThroughChestHeader: null };
                     }
                     if (hiddenPanel === "task" && nextCfg.freezeThroughTaskHeader && cols.includes(nextCfg.freezeThroughTaskHeader)) {
                       nextCfg = { ...nextCfg, freezeThroughTaskHeader: null };
@@ -5634,7 +6146,7 @@ export default function App() {
 
   return (
     <div
-      className={`app${isItemTableView ? " app--item-filter-bar" : ""}${isTaskTableView ? " app--task-filter-bar" : ""}${isRowTemplateDragging ? " app--row-template-dragging" : ""}`}
+      className={`app${isItemLikeTableView ? " app--item-filter-bar" : ""}${isTaskTableView ? " app--task-filter-bar" : ""}${isRowTemplateDragging ? " app--row-template-dragging" : ""}`}
     >
       {wizardOpen ? <Wizard /> : null}
       {appUpdater.offer ? (
@@ -5991,7 +6503,17 @@ export default function App() {
                     className="filter-quick-search"
                     placeholder="Ctrl+F 搜索任意列（Enter 保存到自定义筛选）"
                     value={itemFilterQuickQuery}
-                    onChange={(e) => setItemFilterQuickQuery(e.target.value)}
+                    onChange={(e) => {
+                      setItemFilterQuickRaw(null);
+                      setItemFilterQuickQuery(e.target.value);
+                    }}
+                    onPaste={(e) => {
+                      const text =
+                        e.clipboardData.getData("text/plain") || e.clipboardData.getData("text");
+                      if (!text || !isBulkyFilterPaste(text)) return;
+                      e.preventDefault();
+                      applyItemFilterPaste(text);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -6009,7 +6531,7 @@ export default function App() {
                 </div>
               </div>
               <p className="help modal-filter-help">
-                选项随当前表格数据更新。各区块条件之间为「且」；类型、物品品质同列多选为「或」；自定义筛选同列多选为「且」。顶栏第一行可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中（与类型等为且）。防护值：「无」指单元格为空；「范围内」指可解析为数字且在区间内（可只填最小或最大）。类型区块内「赛季物品」：列值为 **1** 表示赛季物品。
+                选项随当前表格数据更新。各区块条件之间为「且」；类型、物品品质同列多选为「或」；自定义筛选同列多选为「且」。顶栏第一行可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中（与类型等为且）。支持从 Excel 粘贴多格/多行（按单元格「或」匹配）；内容过多时输入框压缩为「已识别id · N」，大批量按完整单元格精确匹配。防护值：「无」指单元格为空；「范围内」指可解析为数字且在区间内（可只填最小或最大）。类型区块内「赛季物品」：列值为 **1** 表示赛季物品。
               </p>
               <FilterSectionDnDList<ItemFilterSectionId>
                 order={itemFilterSectionOrder}
@@ -6239,7 +6761,17 @@ export default function App() {
                     className="filter-quick-search"
                     placeholder="Ctrl+F 搜索任意列（Enter 保存到自定义筛选）"
                     value={taskFilterQuickQuery}
-                    onChange={(e) => setTaskFilterQuickQuery(e.target.value)}
+                    onChange={(e) => {
+                      setTaskFilterQuickRaw(null);
+                      setTaskFilterQuickQuery(e.target.value);
+                    }}
+                    onPaste={(e) => {
+                      const text =
+                        e.clipboardData.getData("text/plain") || e.clipboardData.getData("text");
+                      if (!text || !isBulkyFilterPaste(text)) return;
+                      e.preventDefault();
+                      applyTaskFilterPaste(text);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
@@ -6257,7 +6789,7 @@ export default function App() {
                 </div>
               </div>
               <p className="help modal-filter-help">
-                选项随当前表格数据更新。三列条件之间为「且」；任务类型、任务链同列多选为「或」；自定义筛选同列多选为「且」。顶栏可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中。选项行左侧 ⋮⋮ 可拖拽调整选项顺序；区块行左侧 ⋮⋮ 可拖拽调整任务类型 / 任务链顺序，保存后写入配置。
+                选项随当前表格数据更新。三列条件之间为「且」；任务类型、任务链同列多选为「或」；自定义筛选同列多选为「且」。顶栏可保存关键字为 Chip；**Enter** 或 **保存到筛选项** 将关键字写入自定义筛选并选中。支持从 Excel 粘贴多格/多行（按单元格「或」匹配）；内容过多时输入框压缩为「已识别id · N」，大批量按完整单元格精确匹配。选项行左侧 ⋮⋮ 可拖拽调整选项顺序；区块行左侧 ⋮⋮ 可拖拽调整任务类型 / 任务链顺序，保存后写入配置。
               </p>
               <FilterSectionDnDList<TaskFilterSectionId>
                 order={taskFilterSectionOrder}
@@ -6363,6 +6895,7 @@ export default function App() {
               if (!config?.excelWorkspaceRoot?.trim()) return;
               selectionByViewRef.current.delete("item");
               selectionByViewRef.current.delete("task");
+              selectionByViewRef.current.delete("chest");
               clearRowSelection();
               setItemLineQty({});
               void (async () => {
@@ -6376,12 +6909,12 @@ export default function App() {
           <button
             type="button"
             className="btn"
-            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim() || (!isItemTableView && !isTaskTableView)}
+            disabled={wizardOpen || !config?.excelWorkspaceRoot?.trim() || (!isItemLikeTableView && !isTaskTableView)}
             onClick={() => openTableFilterModal()}
           >
             筛选
           </button>
-          {(isItemTableView || isTaskTableView) ? (
+          {(isItemLikeTableView || isTaskTableView) ? (
             <button
               type="button"
               className="btn"
@@ -6428,7 +6961,7 @@ export default function App() {
               title={
                 config.gmtPlatform === "cn"
                   ? "国服下不可开启 PR"
-                  : "切换海外 PreLive（pre-krad / PreLive-SG）"
+                  : "切换海外 PreLive（pre-krad / PR 区服）"
               }
             >
               <span className={!config.gmtPreliveEnabled ? "is-active" : ""}>PR off</span>
@@ -6470,7 +7003,7 @@ export default function App() {
               <span className="gmt-field-label">分支环境</span>
               <select
                 className="gmt-select"
-                disabled={!gmtLoggedIn || gmtEnvs.length === 0 || isPreliveGmtEnabled(config)}
+                disabled={!gmtLoggedIn || gmtEnvs.length === 0}
                 value={config.gmtEnvId != null ? String(config.gmtEnvId) : ""}
                 onChange={(e) => {
                   const id = Number(e.target.value);
@@ -6510,7 +7043,7 @@ export default function App() {
               />
               可交易
             </label>
-            {isItemTableView ? (
+            {isItemLikeTableView ? (
               <span
                 className={`gmt-send-hint${gmtItemSendReadiness.ready ? " gmt-send-hint--ok" : " gmt-send-hint--blocked"}`}
               >
@@ -6564,6 +7097,7 @@ export default function App() {
           activeView={activeView}
           filterSheetOpen={filterSheetOpen}
           onSelectItem={() => switchActiveView({ kind: "item" })}
+          onSelectChest={() => switchActiveView({ kind: "chest" })}
           onSelectTask={() => switchActiveView({ kind: "task" })}
           onSelectTemplate={(id) => switchActiveView({ kind: "template", id })}
           onPersist={persist}
@@ -6607,6 +7141,11 @@ export default function App() {
             if (filterSheetOpen) return;
             switchActiveView({ kind: "rankUp" });
           }}
+          classLoadoutAccent={sidebarClassLoadoutDefaultColor()}
+          onSelectClassLoadout={() => {
+            if (filterSheetOpen) return;
+            switchActiveView({ kind: "classLoadout" });
+          }}
           sproutAccent={sidebarSproutDefaultColor()}
           addSproutBusy={addSproutBusy}
           onAddSproutOneClick={() => void runAddSproutOneClick()}
@@ -6627,6 +7166,8 @@ export default function App() {
             switchActiveView({ kind: "taskMapCheck" });
           }}
           taskMapCheckBusy={taskMapCheckBusy}
+          taskIssueAlertActive={taskIssueAlertActive}
+          onSelectTaskIssues={selectTaskIssuesView}
           onCloseMenus={() => closeCtx()}
           onOpenGallery={() => {
             setSidebarGalleryOpen(true);
@@ -6648,6 +7189,7 @@ export default function App() {
             }}
             onCardMainPanelClick={() => setSidebarGalleryMainOpen(true)}
             onSelectItem={() => switchActiveView({ kind: "item" })}
+            onSelectChest={() => switchActiveView({ kind: "chest" })}
             onSelectTask={() => switchActiveView({ kind: "task" })}
             onSelectTemplate={(id) => switchActiveView({ kind: "template", id })}
             onOpenHiddenPanel={(panel) => {
@@ -6690,6 +7232,11 @@ export default function App() {
               if (filterSheetOpen) return;
               switchActiveView({ kind: "rankUp" });
             }}
+            classLoadoutAccent={sidebarClassLoadoutDefaultColor()}
+            onSelectClassLoadout={() => {
+              if (filterSheetOpen) return;
+              switchActiveView({ kind: "classLoadout" });
+            }}
             sproutAccent={sidebarSproutDefaultColor()}
             addSproutBusy={addSproutBusy}
             onAddSproutOneClick={() => void runAddSproutOneClick()}
@@ -6710,6 +7257,8 @@ export default function App() {
               switchActiveView({ kind: "taskMapCheck" });
             }}
             taskMapCheckBusy={taskMapCheckBusy}
+            taskIssueAlertActive={taskIssueAlertActive}
+            onSelectTaskIssues={selectTaskIssuesView}
             templateDropHoverId={templateDropHoverId}
             templateDropRejectId={templateDropRejectId}
           />
@@ -6723,7 +7272,7 @@ export default function App() {
           />
         ) : null}
         <div className="main-column">
-          {isItemTableView && config ? (
+          {isItemLikeTableView && config ? (
             <ItemFilterChipBar
               customKeywordSelected={activeItemFilterForChip.customKeywordKeys}
               customKeywordPinned={[...chipItemCustomKeywordPinned]}
@@ -6921,19 +7470,35 @@ export default function App() {
               onRunCheck={() => void runTaskMapTagCheck()}
               onExportCsv={() => void exportTaskMapTagCheckCsv()}
             />
+          ) : activeView.kind === "taskIssues" && config ? (
+            <TaskIssuesPanel
+              config={config}
+              busy={taskMapCheckBusy}
+              error={tagCheckError}
+              report={tagCheckReport}
+              onExportCsv={() => void exportTaskMapTagCheckCsv()}
+            />
+          ) : activeView.kind === "classLoadout" && config ? (
+            <ClassLoadoutPanel
+              config={config}
+              itemAoa={itemAoa}
+              onSendTemplateNow={(title, items) => void sendTemplateItemsNow(title, items)}
+            />
           ) : !currentAoa ? (
             <div className="empty">
               {wizardOpen
                 ? "请先完成设置向导"
                 : !config.excelWorkspaceRoot?.trim()
                   ? "无数据"
-                  : loadError
-                    ? "暂无表格数据"
-                    : itemAoa == null && taskAoa == null
-                      ? excelLoadMessageModeRef.current === "refresh"
-                        ? "无数据"
-                        : "获取本地数据中…"
-                      : "无数据"}
+                  : activeView.kind === "chest" && chestAoa == null
+                    ? "缺少 Excel\\Chest.xlsx（或无法解析宝箱/礼包表）"
+                    : loadError
+                      ? "暂无表格数据"
+                      : itemAoa == null && taskAoa == null
+                        ? excelLoadMessageModeRef.current === "refresh"
+                          ? "无数据"
+                          : "获取本地数据中…"
+                        : "无数据"}
             </div>
           ) : (
             <>
@@ -6978,7 +7543,7 @@ export default function App() {
                       className="btn btn-tiny"
                       disabled={
                         (visibleSelectedCount === 0 && !pinActive) ||
-                        !(isItemTableView || isTaskTableView)
+                        !(isItemLikeTableView || isTaskTableView)
                       }
                       onClick={() => handlePinButtonClick()}
                     >
@@ -6988,7 +7553,7 @@ export default function App() {
                           ? "取消置顶"
                           : "置顶已勾选"}
                     </button>
-                    {isItemTableView ? (
+                    {isItemLikeTableView ? (
                       <span
                         className="table-selection-meta-wear"
                         title="未单独设置的武器/防具将使用此装备耐久发放（钥匙/绷带/甲修不使用）"
@@ -7020,7 +7585,7 @@ export default function App() {
                 >
               <table
                 ref={tableDataRef}
-                className={`data${isItemTableView ? " data-item-qty data-item-wear" : ""}${freezeVisIdx >= 0 ? " data-col-freeze" : ""}`}
+                className={`data${isItemLikeTableView ? " data-item-qty data-item-wear" : ""}${freezeVisIdx >= 0 ? " data-col-freeze" : ""}`}
               >
                 <thead>
                   <tr>
@@ -7043,7 +7608,7 @@ export default function App() {
                               : "全选"
                           }
                         />
-                        {isItemTableView ? <span className="item-qty-header-gap" aria-hidden /> : null}
+                        {isItemLikeTableView ? <span className="item-qty-header-gap" aria-hidden /> : null}
                       </div>
                     </th>
                     <th
@@ -7114,7 +7679,7 @@ export default function App() {
                               {columnFiltered ? <span className="th-filter-mark" title="已启用列筛选" aria-hidden>▾</span> : null}
                               {sortBtns}
                             </div>
-                          ) : (activeView.kind === "item" || activeView.kind === "task") &&
+                          ) : (activeView.kind === "item" || activeView.kind === "task" || activeView.kind === "chest") &&
                             headerCannotHide(activeView.kind, name) ? (
                             <div className="th-inner">
                               <span>{name || `列${ci + 1}`}</span>
@@ -7144,7 +7709,7 @@ export default function App() {
                   scrollRef={tableScrollBodyRef}
                   rows={displayBodyRows}
                   visibleColIndices={visibleColIndices}
-                  isItemTableView={isItemTableView}
+                  isItemTableView={isItemLikeTableView}
                   selectedRows={selectedRows}
                   itemLineQty={itemLineQty}
                   defaultWearValue={defaultWearValue}
@@ -7236,11 +7801,16 @@ export default function App() {
               <div role="separator" className="context-menu-sep" />
             </>
           ) : null}
-          {ctxMenu.dataIdx != null && (isItemTableView || isTaskTableView) ? (
+          {ctxMenu.dataIdx != null && (isItemLikeTableView || isTaskTableView) ? (
             <>
               <button type="button" className="context-menu-item" onClick={() => void copyContextRowId()}>
-                {isItemTableView ? "复制物品 ID" : "复制任务 ID"}
+                {isItemLikeTableView ? "复制物品 ID" : "复制任务 ID"}
               </button>
+              {isTaskTableView ? (
+                <button type="button" className="context-menu-item" onClick={() => openConditionTranslateFromContext()}>
+                  翻译完成条件
+                </button>
+              ) : null}
               <div role="separator" className="context-menu-sep" />
             </>
           ) : null}
@@ -7371,6 +7941,13 @@ export default function App() {
           </button>
         </div>
       ) : null}
+
+      <ConditionTranslateModal
+        open={conditionTranslate != null}
+        taskId={conditionTranslate?.taskId ?? ""}
+        result={conditionTranslate?.result ?? null}
+        onClose={() => setConditionTranslate(null)}
+      />
 
       <div className="toasts">
         {toasts.map((t) => (

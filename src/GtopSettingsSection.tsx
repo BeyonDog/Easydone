@@ -117,16 +117,17 @@ export function GtopSettingsSection({
         const list = await gtopFetchRegionServers(slice, envId);
         setServers(list);
         const current = configRef.current;
-        if (current.gmtPlatform === "cn" && current.gtopRegionServerName) {
-          const target = resolveGtopBranchServerOptions(list, "cn").find(
-            (item) => item.name === current.gtopRegionServerName,
-          );
+        if (current.gtopRegionServerName) {
+          const targetPlatform = current.gmtPlatform === "cn" ? "cn" : "overseas";
+          const options = resolveGtopBranchServerOptions(list, targetPlatform);
+          const target = options.find((item) => item.name === current.gtopRegionServerName);
           if (target?.id && target.id !== current.gtopRegionServerId) {
             void onPersist({
               ...current,
               gtopRegionServerId: target.id,
-              gtopCnRegionServerId: target.id,
-              gtopCnRegionServerName: target.name,
+              ...(targetPlatform === "cn"
+                ? { gtopCnRegionServerId: target.id, gtopCnRegionServerName: target.name }
+                : { gtopOverseasRegionServerId: target.id, gtopOverseasRegionServerName: target.name }),
             });
           }
         }
@@ -215,6 +216,8 @@ export function GtopSettingsSection({
         ? "未在 GTOP 环境列表中找到，请点「刷新环境列表」"
         : "正在关联…";
 
+  const isOverseasCcsEnv = config.gmtPlatform !== "cn" && /(^|[^a-z0-9])ccs([^a-z0-9]|$)/i.test(config.gmtEnvName?.trim() ?? "");
+
   return (
     <div className="gtop-settings">
       <p className="help">用于上传和还原配置（上传和还原均不修改本地文件）。</p>
@@ -250,10 +253,12 @@ export function GtopSettingsSection({
         </div>
       </div>
       <div className="field">
-        <label>分支环境</label>
+        <label>
+          分支环境 <span className="muted">(跟随右上角分支环境)</span>
+        </label>
         <select
           className="gmt-select"
-          disabled={platform === "cn" || !gtopLoggedIn || !config.gtopEnvId}
+          disabled={true}
           value={config.gtopRegionServerId ?? ""}
           onChange={(e) => pickServer(e.target.value)}
         >
@@ -267,6 +272,9 @@ export function GtopSettingsSection({
         </select>
       </div>
       {platform === "cn" ? <p className="help">国服区服跟随顶栏服务器选择。</p> : null}
+      {isOverseasCcsEnv ? (
+        <div className="error">当前分支环境为 CCS，无对应 GTOP 映射，已保留原 GTOP 区服选择。</div>
+      ) : null}
       {fixedEnvMissing && gtopLoggedIn ? (
         <div className="error">GTOP 未找到环境：{fixedEnvName}</div>
       ) : null}

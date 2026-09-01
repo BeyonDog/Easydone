@@ -43,7 +43,55 @@ export type GmtExecInvokeResult = {
 
 export type GmtEnvEntry = { id: number; name: string; protocol?: number | null };
 
+/** Overseas PreLive（PR）模式下允许选择的 GMT 区服名；id 以 pre-krad 接口为准。 */
+export const PRELIVE_GMT_ENV_NAMES = [
+  "iOS-REVIEW",
+  "KOL-US",
+  "KOL-SG",
+  "ACT-VN",
+  "ACT-TH",
+  "ACT-BR",
+  "REVIEW",
+  "ACT-US",
+  "WeTest",
+  "ACT-ID",
+  "PreLive-US",
+  "PreLive-SG",
+] as const;
+
+const PRELIVE_GMT_ENV_NAME_SET = new Set<string>(PRELIVE_GMT_ENV_NAMES);
+
+/** 开启 PR 时的默认区服（名单内且 historically 写死 id=2）。 */
 export const PRELIVE_GMT_ENV: GmtEnvEntry = { id: 2, name: "PreLive-SG", protocol: 2 };
+
+export function isPreliveGmtEnvName(name: string | null | undefined): boolean {
+  const trimmed = name?.trim();
+  return Boolean(trimmed && PRELIVE_GMT_ENV_NAME_SET.has(trimmed));
+}
+
+/** 按 PR 名单过滤 GMT 环境；顺序与 {@link PRELIVE_GMT_ENV_NAMES} 一致。 */
+export function filterPreliveGmtEnvs(envs: GmtEnvEntry[]): GmtEnvEntry[] {
+  const byName = new Map<string, GmtEnvEntry>();
+  for (const env of envs) {
+    const name = env.name?.trim();
+    if (!name || !PRELIVE_GMT_ENV_NAME_SET.has(name)) continue;
+    if (!byName.has(name)) byName.set(name, env);
+  }
+  const ordered: GmtEnvEntry[] = [];
+  for (const name of PRELIVE_GMT_ENV_NAMES) {
+    const hit = byName.get(name);
+    if (hit) ordered.push(hit);
+  }
+  return ordered;
+}
+
+/** PR 开启时 GTOP 不可用；供操作入口统一拦截。 */
+export function gtopBlockedByPreliveMessage(gmtEnvName?: string | null): string {
+  const name = gmtEnvName?.trim();
+  return name
+    ? `当前 GMT 为 PR 区服（${name}），GTOP 不能对该区服操作`
+    : "当前为 PR 区服，GTOP 不能对该区服操作";
+}
 
 export type GmtSessionSlice = {
   gmtBaseUrl: string;
@@ -192,7 +240,7 @@ export function gmtSessionSliceFromConfig(c: {
     return {
       gmtBaseUrl: PRELIVE_GMT_BASE_URL,
       gmtCookie: c.gmtCookie ?? "",
-      gmtEnvId: PRELIVE_GMT_ENV.id,
+      gmtEnvId: c.gmtEnvId ?? PRELIVE_GMT_ENV.id,
     };
   }
   return {

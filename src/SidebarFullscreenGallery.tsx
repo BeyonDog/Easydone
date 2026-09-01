@@ -16,6 +16,7 @@ import {
   toggleSidebarCardHidden,
 } from "./lib/sidebarCardLayout.ts";
 import {
+  sidebarChestDefaultColor,
   sidebarItemDefaultColor,
   sidebarTaskDefaultColor,
 } from "./lib/sidebarCardColor.ts";
@@ -24,11 +25,11 @@ export type SidebarFullscreenGalleryProps = SidebarCardRenderContext & {
   config: AppConfig;
   onPersist: (next: AppConfig) => void | Promise<void>;
   onClose: () => void;
-  onOpenHiddenPanel?: (panel: "item" | "task") => void;
+  onOpenHiddenPanel?: (panel: "item" | "task" | "chest") => void;
   onTemplateRename?: (id: string, title: string) => void;
 };
 
-type PinnedMenuTarget = "item" | "task";
+type PinnedMenuTarget = "item" | "task" | "chest";
 type ColorTarget =
   | { kind: "pinned"; pin: PinnedMenuTarget }
   | { kind: "template"; id: string };
@@ -93,10 +94,16 @@ export function SidebarFullscreenGallery({
   const colorInitialHex = (): string => {
     if (!colorTarget) return sidebarItemDefaultColor(config);
     if (colorTarget.kind === "pinned") {
-      if (colorTarget.pin === "item") {
+      const pin = colorTarget.pin;
+      if (pin === "item") {
         return config.sidebarItemCardColorOverride?.trim()
           ? config.sidebarItemCardColorOverride
           : sidebarItemDefaultColor(config);
+      }
+      if (pin === "chest") {
+        return config.sidebarChestCardColorOverride?.trim()
+          ? config.sidebarChestCardColorOverride
+          : sidebarChestDefaultColor(config);
       }
       return config.sidebarTaskCardColorOverride?.trim()
         ? config.sidebarTaskCardColorOverride
@@ -117,6 +124,8 @@ export function SidebarFullscreenGallery({
           colorTarget.pin === "item" ? hex : config.sidebarItemCardColorOverride ?? null,
         sidebarTaskCardColorOverride:
           colorTarget.pin === "task" ? hex : config.sidebarTaskCardColorOverride ?? null,
+        sidebarChestCardColorOverride:
+          colorTarget.pin === "chest" ? hex : config.sidebarChestCardColorOverride ?? null,
       });
     } else {
       const list = config.savedTemplates.map((t) =>
@@ -135,6 +144,8 @@ export function SidebarFullscreenGallery({
           colorTarget.pin === "item" ? null : config.sidebarItemCardColorOverride ?? null,
         sidebarTaskCardColorOverride:
           colorTarget.pin === "task" ? null : config.sidebarTaskCardColorOverride ?? null,
+        sidebarChestCardColorOverride:
+          colorTarget.pin === "chest" ? null : config.sidebarChestCardColorOverride ?? null,
       });
     } else {
       const list = config.savedTemplates.map((t) =>
@@ -236,6 +247,7 @@ export function SidebarFullscreenGallery({
                 ...config,
                 sidebarItemCardColorOverride: pin === "item" ? null : config.sidebarItemCardColorOverride ?? null,
                 sidebarTaskCardColorOverride: pin === "task" ? null : config.sidebarTaskCardColorOverride ?? null,
+                sidebarChestCardColorOverride: pin === "chest" ? null : config.sidebarChestCardColorOverride ?? null,
               });
             }}
           >

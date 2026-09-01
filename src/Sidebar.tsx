@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ActiveView, AppConfig, SendTemplateItem } from "./types.ts";
 import { SidebarCardColorPopover } from "./SidebarCardColorPopover.tsx";
 import {
+  sidebarChestDefaultColor,
   sidebarItemDefaultColor,
   sidebarTaskDefaultColor,
 } from "./lib/sidebarCardColor.ts";
@@ -19,10 +20,11 @@ export type SidebarProps = {
   activeView: ActiveView;
   filterSheetOpen: boolean;
   onSelectItem: () => void;
+  onSelectChest: () => void;
   onSelectTask: () => void;
   onSelectTemplate: (id: string) => void;
   onPersist: (next: AppConfig) => void | Promise<void>;
-  onOpenHiddenPanel: (panel: "item" | "task") => void;
+  onOpenHiddenPanel: (panel: "item" | "task" | "chest") => void;
   onTemplateRename: (id: string, title: string) => void;
   onTemplateDelete: (id: string, title: string) => void;
   onSendTemplateNow: (title: string, items: SendTemplateItem[]) => void;
@@ -41,8 +43,11 @@ export type SidebarProps = {
   onAddExpPresetRichAndMaxLevel?: () => void;
   onSelectRankUp: () => void;
   rankUpAccent: string;
+  classLoadoutAccent: string;
+  onSelectClassLoadout: () => void;
   onSelectUploadConfig: () => void;
   onSelectTaskMapCheck: () => void;
+  onSelectTaskIssues: () => void;
   sproutAccent: string;
   addSproutBusy?: boolean;
   onAddSproutOneClick?: () => void;
@@ -55,13 +60,14 @@ export type SidebarProps = {
   onUploadConfigRestore?: () => void;
   taskMapCheckAccent: string;
   taskMapCheckBusy?: boolean;
+  taskIssueAlertActive?: boolean;
   onCloseMenus: () => void;
   onOpenGallery: () => void;
   templateDropHoverId?: string | null;
   templateDropRejectId?: string | null;
 };
 
-type PinnedMenuTarget = "item" | "task";
+type PinnedMenuTarget = "item" | "task" | "chest";
 type ColorTarget =
   | { kind: "pinned"; pin: PinnedMenuTarget }
   | { kind: "template"; id: string };
@@ -75,6 +81,7 @@ export function Sidebar({
   activeView,
   filterSheetOpen,
   onSelectItem,
+  onSelectChest,
   onSelectTask,
   onSelectTemplate,
   onPersist,
@@ -97,6 +104,8 @@ export function Sidebar({
   onAddExpPresetRichAndMaxLevel,
   onSelectRankUp,
   rankUpAccent,
+  classLoadoutAccent,
+  onSelectClassLoadout,
   onSelectUploadConfig,
   sproutAccent,
   addSproutBusy = false,
@@ -110,7 +119,9 @@ export function Sidebar({
   onUploadConfigRestore,
   taskMapCheckAccent,
   taskMapCheckBusy = false,
+  taskIssueAlertActive = false,
   onSelectTaskMapCheck,
+  onSelectTaskIssues,
   onCloseMenus,
   onOpenGallery,
   templateDropHoverId = null,
@@ -150,17 +161,19 @@ export function Sidebar({
     if (!colorTarget) return sidebarItemDefaultColor(config);
     if (colorTarget.kind === "pinned") {
       const pin = colorTarget.pin;
-      const card = allCards.find((c) => c.kind === "pinned" && c.pin === pin);
-      if (card?.kind === "pinned") {
-        if (pin === "item") {
-          return config.sidebarItemCardColorOverride?.trim()
-            ? config.sidebarItemCardColorOverride
-            : sidebarItemDefaultColor(config);
-        }
-        return config.sidebarTaskCardColorOverride?.trim()
-          ? config.sidebarTaskCardColorOverride
-          : sidebarTaskDefaultColor(config);
+      if (pin === "item") {
+        return config.sidebarItemCardColorOverride?.trim()
+          ? config.sidebarItemCardColorOverride
+          : sidebarItemDefaultColor(config);
       }
+      if (pin === "chest") {
+        return config.sidebarChestCardColorOverride?.trim()
+          ? config.sidebarChestCardColorOverride
+          : sidebarChestDefaultColor(config);
+      }
+      return config.sidebarTaskCardColorOverride?.trim()
+        ? config.sidebarTaskCardColorOverride
+        : sidebarTaskDefaultColor(config);
     }
     const t =
       colorTarget.kind === "template"
@@ -180,6 +193,8 @@ export function Sidebar({
           colorTarget.pin === "item" ? hex : config.sidebarItemCardColorOverride ?? null,
         sidebarTaskCardColorOverride:
           colorTarget.pin === "task" ? hex : config.sidebarTaskCardColorOverride ?? null,
+        sidebarChestCardColorOverride:
+          colorTarget.pin === "chest" ? hex : config.sidebarChestCardColorOverride ?? null,
       });
     } else {
       const list = config.savedTemplates.map((t) =>
@@ -198,6 +213,8 @@ export function Sidebar({
           colorTarget.pin === "item" ? null : config.sidebarItemCardColorOverride ?? null,
         sidebarTaskCardColorOverride:
           colorTarget.pin === "task" ? null : config.sidebarTaskCardColorOverride ?? null,
+        sidebarChestCardColorOverride:
+          colorTarget.pin === "chest" ? null : config.sidebarChestCardColorOverride ?? null,
       });
     } else {
       const list = config.savedTemplates.map((t) =>
@@ -215,6 +232,7 @@ export function Sidebar({
     addExpPresetBusy,
     rankUpAccent,
     sproutAccent,
+    classLoadoutAccent,
     addSproutBusy,
     resetMatchAccent,
     clearMatchBusy,
@@ -222,15 +240,19 @@ export function Sidebar({
     uploadConfigBusy,
     taskMapCheckAccent,
     taskMapCheckBusy,
+    taskIssueAlertActive,
     serverWideSendEnabled,
     templateDropHoverId,
     templateDropRejectId,
     onSelectItem,
+    onSelectChest,
     onSelectTask,
     onSelectAddExp,
     onSelectRankUp,
+    onSelectClassLoadout,
     onSelectUploadConfig,
     onSelectTaskMapCheck,
+    onSelectTaskIssues,
     onSelectTemplate,
     onAddExpPresetMaxLevel,
     onAddExpPresetRich,
@@ -334,6 +356,7 @@ export function Sidebar({
                 ...config,
                 sidebarItemCardColorOverride: pin === "item" ? null : config.sidebarItemCardColorOverride ?? null,
                 sidebarTaskCardColorOverride: pin === "task" ? null : config.sidebarTaskCardColorOverride ?? null,
+                sidebarChestCardColorOverride: pin === "chest" ? null : config.sidebarChestCardColorOverride ?? null,
               });
             }}
           >

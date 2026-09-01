@@ -2,6 +2,9 @@ export type ExcelWorkspaceMtimeFingerprint = {
   item: number;
   mission: number;
   account: number;
+  chest: number;
+  taskCsv: number;
+  conditionCsv: number;
 };
 
 export const DEFAULT_EXCEL_AUTO_REFRESH_INTERVAL_SEC = 1800;
@@ -10,7 +13,14 @@ export function fingerprintsEqual(
   a: ExcelWorkspaceMtimeFingerprint,
   b: ExcelWorkspaceMtimeFingerprint,
 ): boolean {
-  return a.item === b.item && a.mission === b.mission && a.account === b.account;
+  return (
+    a.item === b.item &&
+    a.mission === b.mission &&
+    a.account === b.account &&
+    a.chest === b.chest &&
+    a.taskCsv === b.taskCsv &&
+    a.conditionCsv === b.conditionCsv
+  );
 }
 
 export function normalizeExcelAutoRefreshIntervalSec(raw: unknown): number {

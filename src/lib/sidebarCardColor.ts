@@ -2,10 +2,13 @@ import type { AppConfig, SavedTemplate } from "../types.ts";
 
 export const DEFAULT_SIDEBAR_ITEM_CARD_COLOR = "#e5484d";
 export const DEFAULT_SIDEBAR_TASK_CARD_COLOR = "#5b8cff";
+export const DEFAULT_SIDEBAR_CHEST_CARD_COLOR = "#0d9488";
 export const DEFAULT_SIDEBAR_ADD_EXP_CARD_COLOR = "#e85d04";
 export const DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR = "#c9a227";
+export const DEFAULT_SIDEBAR_CLASS_LOADOUT_CARD_COLOR = "#0ea5e9";
 export const DEFAULT_SIDEBAR_UPLOAD_CONFIG_CARD_COLOR = "#ffffff";
 export const DEFAULT_SIDEBAR_TASK_MAP_CHECK_CARD_COLOR = "#8b5cf6";
+export const DEFAULT_SIDEBAR_TASK_ISSUES_CARD_COLOR = "#dc2626";
 export const DEFAULT_SIDEBAR_RESET_MATCH_CARD_COLOR = "#6b7280";
 export const DEFAULT_SIDEBAR_SPROUT_CARD_COLOR = "#22c55e";
 
@@ -25,12 +28,20 @@ export function sidebarRankUpDefaultColor(config: AppConfig): string {
   return normalizeSidebarCardColor(config.sidebarRankUpCardColor, DEFAULT_SIDEBAR_RANK_UP_CARD_COLOR);
 }
 
+export function sidebarClassLoadoutDefaultColor(): string {
+  return DEFAULT_SIDEBAR_CLASS_LOADOUT_CARD_COLOR;
+}
+
 export function sidebarUploadConfigDefaultColor(): string {
   return DEFAULT_SIDEBAR_UPLOAD_CONFIG_CARD_COLOR;
 }
 
 export function sidebarTaskMapCheckDefaultColor(): string {
   return DEFAULT_SIDEBAR_TASK_MAP_CHECK_CARD_COLOR;
+}
+
+export function sidebarTaskIssuesDefaultColor(): string {
+  return DEFAULT_SIDEBAR_TASK_ISSUES_CARD_COLOR;
 }
 
 export function normalizeSidebarCardColor(input: unknown, fallback: string): string {
@@ -48,6 +59,10 @@ export function sidebarTaskDefaultColor(config: AppConfig): string {
   return normalizeSidebarCardColor(config.sidebarTaskCardColor, DEFAULT_SIDEBAR_TASK_CARD_COLOR);
 }
 
+export function sidebarChestDefaultColor(config: AppConfig): string {
+  return normalizeSidebarCardColor(config.sidebarChestCardColor, DEFAULT_SIDEBAR_CHEST_CARD_COLOR);
+}
+
 export function resolvePinnedItemCardColor(config: AppConfig): string {
   if (config.sidebarItemCardColorOverride?.trim()) {
     return normalizeSidebarCardColor(config.sidebarItemCardColorOverride, sidebarItemDefaultColor(config));
@@ -60,6 +75,13 @@ export function resolvePinnedTaskCardColor(config: AppConfig): string {
     return normalizeSidebarCardColor(config.sidebarTaskCardColorOverride, sidebarTaskDefaultColor(config));
   }
   return sidebarTaskDefaultColor(config);
+}
+
+export function resolvePinnedChestCardColor(config: AppConfig): string {
+  if (config.sidebarChestCardColorOverride?.trim()) {
+    return normalizeSidebarCardColor(config.sidebarChestCardColorOverride, sidebarChestDefaultColor(config));
+  }
+  return sidebarChestDefaultColor(config);
 }
 
 export function resolveTemplateCardColor(config: AppConfig, template: SavedTemplate): string {

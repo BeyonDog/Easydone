@@ -15,6 +15,15 @@ export type RankUpRunnerDeps = {
   target: RankLadderStop;
 };
 
+export type RankAddPointsDeps = {
+  config: AppConfig;
+  gmtAccountIdDraft: string;
+  ensureGmtLoggedIn: () => Promise<boolean>;
+  logGmt: (partial: LogGmtPartial) => void;
+  currentScore: number;
+  addAmount: number;
+};
+
 function formatExecMessage(config: AppConfig, raw: string): string {
   return formatGmtExecErrorMessage(raw, undefined, config.gmtEnvId);
 }
@@ -44,6 +53,31 @@ function logRankUp(
   });
 }
 
+function logRankAdd(
+  deps: RankAddPointsDeps,
+  outcome: OperationOutcome,
+  message: string,
+  opts?: { toast?: string; delta?: number },
+) {
+  const delta = opts?.delta;
+  deps.logGmt({
+    action: "GMT 加段位分",
+    outcome,
+    message,
+    toast: opts?.toast ?? message,
+    envName: deps.config.gmtEnvName,
+    accountId: deps.gmtAccountIdDraft,
+    items: [
+      {
+        itemId: "手动加分",
+        qty: delta != null && delta > 0 ? delta : 1,
+        label: delta != null ? `delta ${delta}` : "手动加分",
+      },
+    ],
+    source: "rank-up",
+  });
+}
+
 export function prepareRankUpgradeDelta(
   currentScore: number,
   targetScoreMin: number,
@@ -59,6 +93,20 @@ export function prepareRankUpgradeDelta(
     return { ok: false, error: "当前段位分已达或超过目标，无需升级" };
   }
   return { ok: true, delta };
+}
+
+/** Manual add: positive integer delta onto a locked current score. */
+export function prepareRankAddDelta(
+  currentScore: number,
+  addAmount: number,
+): { ok: true; delta: number } | { ok: false; error: string } {
+  if (!Number.isFinite(currentScore) || currentScore < 0) {
+    return { ok: false, error: "请先确认有效的当前段位分" };
+  }
+  if (!Number.isFinite(addAmount) || !Number.isInteger(addAmount) || addAmount <= 0) {
+    return { ok: false, error: "请输入正整数作为要增加的段位分" };
+  }
+  return { ok: true, delta: addAmount };
 }
 
 export async function runRankUpgrade(deps: RankUpRunnerDeps): Promise<boolean> {
@@ -102,5 +150,49 @@ export async function runRankUpgrade(deps: RankUpRunnerDeps): Promise<boolean> {
     const msg = `升段位异常: ${e instanceof Error ? e.message : String(e)}`;
     logRankUp(deps, "failure", msg, { delta: prepared.delta });
     return false;
+  }
+}
+
+export async function runRankAddPoints(deps: RankAddPointsDeps): Promise<{ ok: boolean; delta?: number }> {
+  const accountId = deps.gmtAccountIdDraft.trim();
+  if (!accountId) {
+    logRankAdd(deps, "failure", "请填写账号 ID（顶栏或下方）");
+    return { ok: false };
+  }
+  const envBlock = gmtEnvSelectionBlockMessage(deps.config.gmtEnvName, deps.config.gmtEnvId);
+  if (envBlock) {
+    logRankAdd(deps, "failure", envBlock);
+    return { ok: false };
+  }
+  const prepared = prepareRankAddDelta(deps.currentScore, deps.addAmount);
+  if (!prepared.ok) {
+    logRankAdd(deps, "failure", prepared.error);
+    return { ok: false };
+  }
+  if (!(await deps.ensureGmtLoggedIn())) {
+    logRankAdd(deps, "failure", "未登录 GMT");
+    return { ok: false };
+  }
+
+  try {
+    const slice = gmtSessionSliceFromConfig(deps.config);
+    const regions = gmtRequestRegions(deps.config);
+    const result = await gmtExecAdminModifyRankPoints(slice, {
+      envName: deps.config.gmtEnvName!.trim(),
+      accountId,
+      lockRegion: regions.lockRegion,
+      notiRegion: regions.notiRegion,
+      deltaRankPoints: String(prepared.delta),
+    });
+    const nextScore = deps.currentScore + prepared.delta;
+    const msg = result.ok
+      ? result.message || `加段位分成功：+${prepared.delta}（当前分 ${deps.currentScore} → ${nextScore}）`
+      : formatExecMessage(deps.config, result.message || "加段位分失败");
+    logRankAdd(deps, result.ok ? "success" : "failure", msg, { delta: prepared.delta });
+    return result.ok ? { ok: true, delta: prepared.delta } : { ok: false };
+  } catch (e) {
+    const msg = `加段位分异常: ${e instanceof Error ? e.message : String(e)}`;
+    logRankAdd(deps, "failure", msg, { delta: prepared.delta });
+    return { ok: false };
   }
 }

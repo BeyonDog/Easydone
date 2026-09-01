@@ -42,6 +42,7 @@ export function FilterChip({
   chipRef,
   onChipPointerDown,
   dragging,
+  title,
 }: {
   label: string;
   selected: boolean;
@@ -55,6 +56,7 @@ export function FilterChip({
   chipRef?: (el: HTMLButtonElement | null) => void;
   onChipPointerDown?: (e: React.PointerEvent<HTMLButtonElement>) => void;
   dragging?: boolean;
+  title?: string;
 }) {
   return (
     <button
@@ -63,7 +65,7 @@ export function FilterChip({
       className={`filter-chip${selected ? " filter-chip--selected" : ""}${dragging ? " filter-chip--dragging" : ""}`}
       onClick={onClick}
       onPointerDown={onChipPointerDown}
-      title={label}
+      title={title ?? label}
     >
       {showRemove ? (
         <span
@@ -112,6 +114,10 @@ export type PinnedMoreChipRowProps = {
   onReorderBar?: (orderedKeys: string[]) => void;
   onDemoteKey?: (key: string) => void;
   labelPrefix?: (key: string) => ReactNode;
+  /** Override chip visible text (defaults to key). */
+  formatLabel?: (key: string) => string;
+  /** Override chip title tooltip (defaults to formatLabel/key). */
+  formatTitle?: (key: string) => string;
   moreOpen: boolean;
   setMoreOpen: (v: boolean | ((o: boolean) => boolean)) => void;
   moreRef: React.RefObject<HTMLDivElement>;
@@ -131,6 +137,8 @@ export function PinnedMoreChipRow({
   onReorderBar,
   onDemoteKey,
   labelPrefix,
+  formatLabel,
+  formatTitle,
   moreOpen,
   setMoreOpen,
   moreRef,
@@ -365,7 +373,8 @@ export function PinnedMoreChipRow({
             <span key={key} className="filter-chip-dnd-slot" data-chip-dnd-item>
               {showBefore ? <span className="filter-chip-drop-indicator" aria-hidden /> : null}
               <FilterChip
-                label={key}
+                label={formatLabel ? formatLabel(key) : key}
+                title={formatTitle ? formatTitle(key) : formatLabel ? formatLabel(key) : key}
                 selected={selectedKeys.includes(key)}
                 onClick={() => {}}
                 prefix={labelPrefix?.(key)}
@@ -408,7 +417,8 @@ export function PinnedMoreChipRow({
                 {moreKeys.map((key) => (
                   <span key={key} className="filter-chip-more-slot">
                     <FilterChip
-                      label={key}
+                      label={formatLabel ? formatLabel(key) : key}
+                      title={formatTitle ? formatTitle(key) : formatLabel ? formatLabel(key) : key}
                       selected={selectedKeys.includes(key)}
                       onClick={() => {}}
                       prefix={labelPrefix?.(key)}

@@ -12,6 +12,7 @@ export type ViewSelectionSnapshot = {
 
 export function viewSelectionKey(view: ActiveView): string | null {
   if (view.kind === "item") return "item";
+  if (view.kind === "chest") return "chest";
   if (view.kind === "task") return "task";
   if (view.kind === "template" || view.kind === "snapshot") return `template:${view.id}`;
   return null;

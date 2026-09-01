@@ -222,8 +222,17 @@ export async function verifyPublishArtifacts(ctx) {
       const platform = manifest.platforms?.["windows-x86_64"];
       if (!platform?.url) {
         issues.push("latest.json 缺少 windows-x86_64.url");
-      } else if (requireSig && !platform.signature) {
-        issues.push("latest.json 缺少 windows-x86_64.signature");
+      } else {
+        const urlPath = new URL(platform.url).pathname.replace(/^\/+/, "");
+        const urlFileName = decodeURIComponent(urlPath.split("/").pop() || "");
+        if (urlFileName !== ctx.installerFileName) {
+          issues.push(
+            `清单安装包 URL 文件名 ${urlFileName} 与发布文件 ${ctx.installerFileName} 不一致`,
+          );
+        }
+        if (requireSig && !platform.signature) {
+          issues.push("latest.json 缺少 windows-x86_64.signature");
+        }
       }
     } catch (e) {
       issues.push(`清单 JSON 无效: ${e instanceof Error ? e.message : e}`);
@@ -257,7 +266,8 @@ async function copyAndPublishManifest(cfg, versionCtx, artifacts) {
   const { version, notes } = versionCtx;
   const stat = fs.statSync(exePath);
   const signature = sigPath ? fs.readFileSync(sigPath, "utf8").trim() : "";
-  const destExe = path.join(cfg.outputDir, cfg.installerFileName);
+  const publishedInstallerName = exeName;
+  const destExe = path.join(cfg.outputDir, publishedInstallerName);
   const destSig = `${destExe}.sig`;
 
   if (!sigPath) {
@@ -270,7 +280,7 @@ async function copyAndPublishManifest(cfg, versionCtx, artifacts) {
     copyFile(sigPath, destSig);
   }
 
-  const artifactUrl = `${cfg.publicBaseUrl}/${cfg.installerFileName}`;
+  const artifactUrl = `${cfg.publicBaseUrl}/${encodeURIComponent(publishedInstallerName)}`;
   const manifest = {
     version,
     notes,
@@ -294,7 +304,7 @@ async function copyAndPublishManifest(cfg, versionCtx, artifacts) {
     outputDir: cfg.outputDir,
     publicBaseUrl: cfg.publicBaseUrl,
     manifestFileName: cfg.manifestFileName,
-    installerFileName: cfg.installerFileName,
+    installerFileName: publishedInstallerName,
     version,
     requireInstallerSignature: cfg.requireInstallerSignature,
   });

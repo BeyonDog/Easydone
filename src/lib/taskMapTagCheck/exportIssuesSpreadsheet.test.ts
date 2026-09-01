@@ -59,7 +59,7 @@ describe("exportIssuesToSpreadsheetXml", () => {
     assert.match(xml, /ss:Color="#E8F0FE"/);
     assert.match(xml, /ss:Color="#E6F4EA"/);
     assert.equal((xml.match(/ss:StyleID="fill0"/g) ?? []).length, 2);
-    assert.match(xml, /&amp; &lt;C&gt;/);
+    assert.match(xml, /<Data ss:Type="String">200<\/Data>/);
     assert.match(xml, /<Worksheet ss:Name="问题列表">/);
   });
 });

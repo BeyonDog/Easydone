@@ -5,6 +5,7 @@ import {
   ITEM_TYPE_REMARK_PRESET_EMOTE,
   ITEM_TYPE_REMARK_PRESET_FITTING_ROOM,
   parseCellAsFiniteNumber,
+  resolveItemIdColumnIndex,
   rowMatchesEmotePreset,
   rowMatchesFittingRoomSkinPreset,
   rowMatchesKeyword,
@@ -74,9 +75,10 @@ export function rowPassesItemTableFilter(
   col: ItemFilterColIdx,
   headers: readonly string[] = [],
 ): boolean {
-  if (f.rowKeyword?.trim() && !rowMatchesKeyword(row, f.rowKeyword)) return false;
+  const idCol = resolveItemIdColumnIndex([...headers]);
+  if (f.rowKeyword?.trim() && !rowMatchesKeyword(row, f.rowKeyword, idCol)) return false;
   if (f.customKeywordKeys?.length) {
-    if (!f.customKeywordKeys.every((k) => rowMatchesKeyword(row, k))) return false;
+    if (!f.customKeywordKeys.every((k) => rowMatchesKeyword(row, k, idCol))) return false;
   }
   if (f.typeRemarkKeys.length > 0) {
     if (!rowPassesTypeRemarkFilterKeys(row, f.typeRemarkKeys, col.tr, col.remark, col.type, col.sub))

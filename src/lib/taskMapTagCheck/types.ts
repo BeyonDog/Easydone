@@ -65,7 +65,12 @@ export interface MapVariant {
 export interface MapTaggedRecord {
   tags: number[];
   position?: { x: number; y: number; z: number };
-  recordKind: "chest" | "loot" | "trigger";
+  recordKind: "chest" | "loot" | "trigger" | "monster";
+}
+
+export interface MapRoomAnchor {
+  roomId?: number;
+  position: { x: number; y: number; z: number };
 }
 
 export interface ParsedMapData {
@@ -73,6 +78,8 @@ export interface ParsedMapData {
   chestRecords: MapTaggedRecord[];
   lootRecords: MapTaggedRecord[];
   triggerRecords: MapTaggedRecord[];
+  monsterRecords: MapTaggedRecord[];
+  roomAnchors: MapRoomAnchor[];
   roomLvlUpInfosEmpty: boolean;
 }
 
@@ -81,9 +88,15 @@ export type TagCheckIssueKind =
   | "file_missing"
   | "csv_xlsx_mismatch"
   | "tag_count_mismatch"
+  | "empty_or_wrong_tag"
   | "live_layer_missing"
+  | "orphan_arrive_trigger"
   | "config_missing"
-  | "scope_unresolved";
+  | "scope_unresolved"
+  | "empty_conditions"
+  | "dangling_condition"
+  | "missing_field"
+  | "unknown_cdt_type";
 
 export interface TagCheckIssue {
   severity: "error" | "warn";

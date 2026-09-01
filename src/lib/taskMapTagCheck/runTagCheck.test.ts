@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { mapDataHasTag, parseMapDataAsset } from "./parseMapDataAsset.ts";
+import { mapDataHasTag, nearestRoomDistance, parseMapDataAsset, findNearbyRecordsMissingTag } from "./parseMapDataAsset.ts";
 import {
   parseConditionCsv,
   parseTaskCsvForConditions,
@@ -15,6 +15,8 @@ import { runTagCheck } from "./runTagCheck.ts";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const fixtureSnippet = readFileSync(join(__dir, "fixtures/map202-hard-snippet.asset.txt"), "utf8");
+const fixtureOrphanArrive = readFileSync(join(__dir, "fixtures/map204-arrive-orphan-snippet.asset.txt"), "utf8");
+const fixtureNearArrive = readFileSync(join(__dir, "fixtures/map204-arrive-near-snippet.asset.txt"), "utf8");
 
 const MINI_MATCH_CONFIG = JSON.stringify({
   Data: [
@@ -65,6 +67,40 @@ describe("parseMapDataAsset", () => {
     assert.ok(mapDataHasTag(parsed, 30000220, "chest_tag"));
     assert.ok(mapDataHasTag(parsed, 1012, "arrive"));
     assert.equal(mapDataHasTag(parsed, 999999, "chest_tag"), false);
+  });
+
+  it("parses MapMonsterRecords InstTags for kill monster_tag", () => {
+    const parsed = parseMapDataAsset(fixtureSnippet, "Map202_GW_Hard");
+    assert.equal(parsed.monsterRecords.length, 1);
+    assert.ok(mapDataHasTag(parsed, 101220140, "kill"));
+    assert.equal(mapDataHasTag(parsed, 101220140, "chest_tag"), false);
+    assert.equal(mapDataHasTag(parsed, 999999, "kill"), false);
+  });
+
+  it("finds nearby records missing target tag (empty InstTags)", () => {
+    const text = `  MapChestBoxRecords:
+  - InstTags:
+    Position: {x: 10, y: 0, z: 20}
+  - InstTags:
+    - TriggerTag: 1013001
+    Position: {x: 100, y: 0, z: 100}
+  MapLootRecords:
+  MapTriggerRecords:
+`;
+    const parsed = parseMapDataAsset(text, "Map203_GW_Hard");
+    const hits = findNearbyRecordsMissingTag(parsed, { x: 10.1, y: 0, z: 20.1 }, 1013001, "chest_tag", 1.5);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]!.record.tags.length, 0);
+  });
+
+  it("parses RoomLvlUpInfos anchors and nearestRoomDistance", () => {
+    const parsed = parseMapDataAsset(fixtureOrphanArrive, "Map204_GW_Hard");
+    assert.equal(parsed.roomAnchors.length, 1);
+    assert.equal(parsed.roomAnchors[0]!.roomId, 99001);
+    assert.equal(parsed.roomLvlUpInfosEmpty, false);
+    const triggerPos = parsed.triggerRecords[0]!.position!;
+    const dist = nearestRoomDistance(triggerPos, parsed.roomAnchors);
+    assert.ok(dist != null && dist > 30);
   });
 });
 
@@ -151,6 +187,9 @@ conditionID,,,,,条件类型,条件值,,,
 900011,0,False,False,True,4,1,29,0,1013001`;
     const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
 任务ID,,,,,,,,,,,,,,,,,,,
+10001,3,0,,,,,,,,,,,,,,,900010,1,
+2000001,3,0,,,,,,,,,,,,,,,900010,1,
+100000,3,0,,,,,,,,,,,,,,,900010,1,
 30025,3,0,,,,,,,,,,,,,,,900010,1,
 9000001,3,0,,,,,,,,,,,,,,,900010,1,
 3000036,3,0,,,,,,,,,,,,,,,900011,1,`;
@@ -236,6 +275,94 @@ conditionID,,,,,条件类型,条件值,,,,,,,
     assert.equal(report.issues.filter((i) => i.kind === "missing_tag").length, 0);
   });
 
+  const taggedAtPos = `  MapChestBoxRecords:
+  - InstTags:
+    - TriggerTag: 1013001
+    Position: {x: 10, y: 0, z: 20}
+  MapLootRecords:
+  MapTriggerRecords:
+`;
+  const emptyAtPos = `  MapChestBoxRecords:
+  - InstTags:
+    Position: {x: 10.1, y: 0, z: 20.05}
+  MapLootRecords:
+  MapTriggerRecords:
+`;
+  const emptyMaps = {
+    "Map202_GW_Hard_MapData.asset": "  MapChestBoxRecords:\n  MapLootRecords:\n  MapTriggerRecords:\n",
+    "Map203_GW_Hard_MapData.asset": "  MapChestBoxRecords:\n  MapLootRecords:\n  MapTriggerRecords:\n",
+    "Map202_GW_Singlemode_Hard_MapData.asset": "  MapChestBoxRecords:\n  MapLootRecords:\n  MapTriggerRecords:\n",
+    "Map203_GW_Singlemode_Hard_MapData.asset": "  MapChestBoxRecords:\n  MapLootRecords:\n  MapTriggerRecords:\n",
+  };
+
+  it("reports empty_or_wrong_tag when sibling layer has empty InstTags near tagged anchor", () => {
+    const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2,PreCdtType3,Comparison3,PreCdtValue3
+conditionID,,,,,条件类型,条件值,,,,,,,,,
+30000361,10103,False,False,True,4,1,29,0,1013001,15,1,2,49,0,101`;
+    const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000036,3,0,,,,,,,,,,,,,,,30000361,1,`;
+    const report = runTagCheck({
+      conditionCsvText: conditionCsv,
+      taskCsvText: taskCsv,
+      matchMapConfigJson: MINI_MATCH_CONFIG,
+      mapDataByFileName: {
+        ...emptyMaps,
+        "Map202_GW_Hard_MapData.asset": taggedAtPos,
+        "Map203_GW_Hard_MapData.asset": emptyAtPos,
+      },
+    });
+    const emptyIssues = report.issues.filter((i) => i.kind === "empty_or_wrong_tag" && i.targetTag === 1013001);
+    assert.ok(emptyIssues.length >= 1, JSON.stringify(report.issues));
+    assert.ok(emptyIssues.some((i) => i.mapId === 203));
+    assert.ok(emptyIssues.every((i) => i.severity === "warn"));
+    assert.equal(report.issues.filter((i) => i.kind === "missing_tag" && i.playerMode === "multi").length, 0);
+  });
+
+  it("does not report empty_or_wrong_tag when both layers hang the same tag", () => {
+    const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2,PreCdtType3,Comparison3,PreCdtValue3
+conditionID,,,,,条件类型,条件值,,,,,,,,,
+30000361,10103,False,False,True,4,1,29,0,1013001,15,1,2,49,0,101`;
+    const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000036,3,0,,,,,,,,,,,,,,,30000361,1,`;
+    const report = runTagCheck({
+      conditionCsvText: conditionCsv,
+      taskCsvText: taskCsv,
+      matchMapConfigJson: MINI_MATCH_CONFIG,
+      mapDataByFileName: {
+        ...emptyMaps,
+        "Map202_GW_Hard_MapData.asset": taggedAtPos,
+        "Map203_GW_Hard_MapData.asset": taggedAtPos,
+        "Map202_GW_Singlemode_Hard_MapData.asset": taggedAtPos,
+        "Map203_GW_Singlemode_Hard_MapData.asset": taggedAtPos,
+      },
+    });
+    assert.equal(report.issues.filter((i) => i.kind === "empty_or_wrong_tag").length, 0, JSON.stringify(report.issues));
+    assert.equal(report.issues.filter((i) => i.kind === "missing_tag").length, 0);
+  });
+
+  it("does not report empty_or_wrong_tag when no layer has the target tag (only missing_tag)", () => {
+    const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2,PreCdtType3,Comparison3,PreCdtValue3
+conditionID,,,,,条件类型,条件值,,,,,,,,,
+30000362,10103,False,False,True,4,1,29,0,1008001,15,1,2,49,0,101`;
+    const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000036,3,0,,,,,,,,,,,,,,,30000362,1,`;
+    const report = runTagCheck({
+      conditionCsvText: conditionCsv,
+      taskCsvText: taskCsv,
+      matchMapConfigJson: MINI_MATCH_CONFIG,
+      mapDataByFileName: {
+        ...emptyMaps,
+        "Map202_GW_Hard_MapData.asset": emptyAtPos,
+        "Map203_GW_Hard_MapData.asset": emptyAtPos,
+      },
+    });
+    assert.equal(report.issues.filter((i) => i.kind === "empty_or_wrong_tag").length, 0, JSON.stringify(report.issues));
+    assert.ok(report.issues.some((i) => i.kind === "missing_tag" && i.targetTag === 1008001));
+  });
+
   it("reports config_missing for unknown skill id", () => {
     const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2
 conditionID,,,,,条件类型,条件值,,,,,,
@@ -252,6 +379,51 @@ conditionID,,,,,条件类型,条件值,,,,,,
       skillIds: parseSkillIdSet("SkillId\nid\n1030201\n"),
     });
     assert.ok(report.issues.some((i) => i.kind === "config_missing" && i.targetTag === 9999999), JSON.stringify(report));
+  });
+
+  it("does not report config_missing for monster_tag present in MapData even if TagGroup empty", () => {
+    const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2
+conditionID,,,,,条件类型,条件值,,,,,,
+30000220,0,False,False,True,24,1,28,0,101220140,49,0,101`;
+    const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000022,3,0,,,,,,,,,,,,,,,30000220,1,`;
+    const report = runTagCheck({
+      conditionCsvText: conditionCsv,
+      taskCsvText: taskCsv,
+      matchMapConfigJson: MINI_MATCH_CONFIG,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": fixtureSnippet,
+      },
+      monsterCatalog: parseMonsterCatalog("MonsterId,MonsterGroupId,TagGroup,MonsterType\nid,,,\n2132201,2132101,,2\n"),
+    });
+    assert.equal(
+      report.issues.filter((i) => i.kind === "config_missing" && i.targetTag === 101220140).length,
+      0,
+      JSON.stringify(report.issues),
+    );
+  });
+
+  it("reports config_missing for monster_tag absent from all MapData", () => {
+    const conditionCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1
+conditionID,,,,,条件类型,条件值,,,
+30000999,0,False,False,True,24,1,28,0,999001`;
+    const taskCsv = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000099,3,0,,,,,,,,,,,,,,,30000999,1,`;
+    const report = runTagCheck({
+      conditionCsvText: conditionCsv,
+      taskCsvText: taskCsv,
+      matchMapConfigJson: MINI_MATCH_CONFIG,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": fixtureSnippet,
+      },
+      monsterCatalog: parseMonsterCatalog("MonsterId,MonsterGroupId,TagGroup,MonsterType\nid,,,\n2001,2001,,3\n"),
+    });
+    assert.ok(
+      report.issues.some((i) => i.kind === "config_missing" && i.targetTag === 999001),
+      JSON.stringify(report.issues),
+    );
   });
 });
 
@@ -628,5 +800,167 @@ conditionID,,,,,条件类型,条件值,,,,,,
     assert.ok(withMap.length > 0);
     assert.ok(withMap.every((i) => i.mapName === "洛萨王城"));
     assert.ok(withMap.every((i) => !i.mapName.includes("大墓地")));
+  });
+});
+
+const MATCH_WANGCHENG_204 = JSON.stringify({
+  Data: [
+    {
+      MapId: 202,
+      MapName: "大墓地2",
+      ScenePath: [
+        {
+          Mode: "困难多人",
+          Difficulty: 2002,
+          ConfigPath: "MatchConfigMap/Map202_GW_Hard.unity",
+          IfOnline: 1,
+        },
+      ],
+    },
+    {
+      MapId: 203,
+      MapName: "大墓地3",
+      ScenePath: [
+        {
+          Mode: "困难多人",
+          Difficulty: 2002,
+          ConfigPath: "MatchConfigMap/Map203_GW_Hard.unity",
+          IfOnline: 1,
+        },
+      ],
+    },
+    {
+      MapId: 204,
+      MapName: "大大墓地",
+      ScenePath: [
+        {
+          Mode: "困难多人",
+          Difficulty: 2002,
+          ConfigPath: "MatchConfigMap/Map204_GW_Hard.unity",
+          IfOnline: 1,
+        },
+      ],
+    },
+  ],
+});
+
+const ARRIVE_103802_CONDITION = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2,PreCdtType3,Comparison3,PreCdtValue3
+conditionID,,,,,条件类型,条件值,,,,,,,,,
+30000272,0,False,False,True,2,1,3,0,103802,49,0,101,15,1,2`;
+
+const ARRIVE_103802_TASK = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000027,3,0,300,,,,,,,,,,,,,,30000272,1,`;
+
+const emptyMapTriggers = "  MapChestBoxRecords:\n  MapLootRecords:\n  MapTriggerRecords:\n";
+
+describe("arrive reachability checks", () => {
+  it("flags orphan_arrive_trigger when Map204 trigger is far from RoomLvlUp", () => {
+    const report = runTagCheck({
+      conditionCsvText: ARRIVE_103802_CONDITION,
+      taskCsvText: ARRIVE_103802_TASK,
+      matchMapConfigJson: MATCH_WANGCHENG_204,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map203_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map204_GW_Hard_MapData.asset": fixtureOrphanArrive,
+      },
+      missionTaskTextById: { "3000027": "洛萨阴影" },
+    });
+    const orphan = report.issues.filter((i) => i.kind === "orphan_arrive_trigger");
+    assert.equal(orphan.length, 1);
+    assert.equal(orphan[0]!.targetTag, 103802);
+    assert.equal(orphan[0]!.severity, "error");
+    assert.equal(orphan[0]!.taskId, "3000027");
+    assert.equal(orphan[0]!.mapId, 204);
+  });
+
+  it("passes orphan check when trigger is near a room anchor", () => {
+    const report = runTagCheck({
+      conditionCsvText: ARRIVE_103802_CONDITION,
+      taskCsvText: ARRIVE_103802_TASK,
+      matchMapConfigJson: MATCH_WANGCHENG_204,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map203_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map204_GW_Hard_MapData.asset": fixtureNearArrive,
+      },
+    });
+    assert.equal(report.issues.filter((i) => i.kind === "orphan_arrive_trigger").length, 0);
+  });
+
+  it("skips orphan check when RoomLvlUpInfos is absent", () => {
+    const map204TriggerOnly = `  MapChestBoxRecords:
+  MapLootRecords:
+  MapTriggerRecords:
+  - triggerTags:
+    - TriggerTag: 103802
+    Position: {x: 100, y: -50, z: 200}
+`;
+    const report = runTagCheck({
+      conditionCsvText: ARRIVE_103802_CONDITION,
+      taskCsvText: ARRIVE_103802_TASK,
+      matchMapConfigJson: MATCH_WANGCHENG_204,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map203_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map204_GW_Hard_MapData.asset": map204TriggerOnly,
+      },
+    });
+    assert.equal(report.issues.filter((i) => i.kind === "orphan_arrive_trigger").length, 0);
+  });
+
+  it("live_layer_missing is error for arrive when tag only on Map202", () => {
+    const map202WithTrigger = `  MapChestBoxRecords:
+  MapLootRecords:
+  MapTriggerRecords:
+  - triggerTags:
+    - TriggerTag: 103802
+    Position: {x: 50, y: 0, z: 50}
+`;
+    const report = runTagCheck({
+      conditionCsvText: ARRIVE_103802_CONDITION,
+      taskCsvText: ARRIVE_103802_TASK,
+      matchMapConfigJson: MATCH_WANGCHENG_204,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": map202WithTrigger,
+        "Map203_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map204_GW_Hard_MapData.asset": emptyMapTriggers,
+      },
+    });
+    const live = report.issues.filter((i) => i.kind === "live_layer_missing");
+    assert.equal(live.length, 1);
+    assert.equal(live[0]!.severity, "error");
+    assert.equal(report.issues.filter((i) => i.kind === "missing_tag").length, 0);
+  });
+
+  it("does not flag orphan_arrive_trigger for chest_tag conditions", () => {
+    const chestCsv = `ID,GotoViewPanel,ShowTips,GotoSubmit,ShowInMatch,CdtType,CdtValue,PreCdtType1,Comparison1,PreCdtValue1,PreCdtType2,Comparison2,PreCdtValue2,PreCdtType3,Comparison3,PreCdtValue3
+conditionID,,,,,条件类型,条件值,,,,,,,,,
+30000361,10103,False,False,True,4,1,29,0,103802,49,0,101,15,1,2`;
+    const chestTask = `TaskID,TaskType,CircleType,TaskChain,NPCID,ClientOrder,StartTime,EndTime,ConditionRelation,GotoGroup,IsAuto,UnlockCdt,UnlockCdtValue,PreTaskID,TaskGetDialogID,TaskClaimedDialogID,ImagePath,Conditions,RewardID,BPExp
+任务ID,,,,,,,,,,,,,,,,,,,
+3000036,3,0,300,,,,,,,,,,,,,,30000361,1,`;
+    const chestOrphanMap = `  MapChestBoxRecords:
+  - InstTags:
+    - TriggerTag: 103802
+    Position: {x: 100, y: -50, z: 200}
+  MapLootRecords:
+  MapTriggerRecords:
+  RoomLvlUpInfos:
+  - RoomId: 99001
+    Position: {x: 500, y: 0, z: 500}
+`;
+    const report = runTagCheck({
+      conditionCsvText: chestCsv,
+      taskCsvText: chestTask,
+      matchMapConfigJson: MATCH_WANGCHENG_204,
+      mapDataByFileName: {
+        "Map202_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map203_GW_Hard_MapData.asset": emptyMapTriggers,
+        "Map204_GW_Hard_MapData.asset": chestOrphanMap,
+      },
+    });
+    assert.equal(report.issues.filter((i) => i.kind === "orphan_arrive_trigger").length, 0);
   });
 });

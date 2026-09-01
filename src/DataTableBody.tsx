@@ -1,4 +1,4 @@
-import React, { memo, useEffect } from "react";
+import React, { memo, useEffect, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ItemValueSlider } from "./ItemValueSlider.tsx";
 import {
@@ -330,9 +330,19 @@ export function DataTableBody({
     overscan: 12,
   });
 
+  const itemExpandedRowCount = useMemo(() => {
+    if (!isItemTableView) return 0;
+    let n = 0;
+    for (const { row, dataIdx } of rows) {
+      if (!selectedRows.has(dataIdx)) continue;
+      if (rowSupportsWear(row) || rowSupportsDurability(row)) n++;
+    }
+    return n;
+  }, [isItemTableView, rows, selectedRows, rowSupportsWear, rowSupportsDurability]);
+
   useEffect(() => {
     rowVirtualizer.measure();
-  }, [isItemTableView, selectedRows, rows, rowVirtualizer]);
+  }, [rows, isItemTableView, itemExpandedRowCount]);
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const colSpan = 2 + visibleColIndices.length;

@@ -68,3 +68,85 @@ export function resolveGtopBranchServerOptions(
 export function missingGtopBranchServerNames(options: GtopBranchServerOption[]): string[] {
   return options.filter((o) => o.id == null).map((o) => o.displayName);
 }
+
+function extractOverseasGmtToken(envName: string): string | null {
+  const norm = envName.trim().toLowerCase();
+  if (!norm) return null;
+  // Accept formats like "rct01", "grpc-rct01", "GSGCI_rct01", "gsgci/rct01".
+  const parts = norm.match(/[a-z0-9]+/g) ?? [];
+  return parts.find((p) =>
+    [
+      "pt01",
+      "pt02",
+      "cvt01",
+      "cvt02",
+      "rct01",
+      "rct02",
+      "rct03",
+      "rct04",
+      "rct05",
+      "sbt",
+      "sbt01",
+      "sbt02",
+      "kd-cn-rct01",
+      "kd-cn-rct02",
+      "kd-cn-sbt01",
+      "ccs",
+    ].includes(p),
+  ) ?? null;
+}
+
+/**
+ * Map overseas GMT branch environment name to the GTOP "region server" api name.
+ *
+ * - Returns `null` when there is no mapping (e.g. CCS).
+ * - `protocol` is used to disambiguate ambiguous "sbt" between GSGCI/GRPC.
+ */
+export function mapOverseasGmtEnvToGtopRegionServerName(
+  envName: string,
+  protocol?: number | null,
+): string | null {
+  const norm = envName.trim().toLowerCase();
+  if (!norm) return null;
+
+  if (/(^|[^a-z0-9])ccs([^a-z0-9]|$)/.test(norm)) return null;
+
+  // kd-cn-* hosts map to themselves.
+  if (norm.includes("kd-cn-rct01")) return "kd-cn-rct01";
+  if (norm.includes("kd-cn-rct02")) return "kd-cn-rct02";
+  if (norm.includes("kd-cn-sbt01")) return "kd-cn-sbt01";
+
+  const token = extractOverseasGmtToken(envName);
+  switch (token) {
+    case "pt01":
+      return "GNG-pt01";
+    case "pt02":
+      return "GNG-pt02";
+    case "cvt01":
+      return "GNG-cvt01";
+    case "cvt02":
+      return "GNG-cvt02";
+    case "rct03":
+      return "GNG-rct03";
+    case "rct04":
+      return "GNG-rct04";
+    case "rct05":
+      return "GNG-rct05";
+    case "rct01":
+      // Both GRPC/GSGCI rct01 map to the same GTOP host.
+      return "krad-rct01";
+    case "rct02":
+      return "krad-rct02";
+    case "sbt":
+      // HAR protocol: 1=GSGCI, 2=GRPC
+      if (protocol === 1) return "krad-sbt01";
+      if (protocol === 2) return "krad-sbt02";
+      return null;
+    case "sbt01":
+      return "krad-sbt01";
+    case "sbt02":
+      return "krad-sbt02";
+    default:
+      return null;
+  }
+}

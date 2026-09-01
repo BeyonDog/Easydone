@@ -5,6 +5,7 @@ import {
   GTOP_BRANCH_SERVER_ALLOWLIST,
   GTOP_FIXED_ENV_NAME,
   missingGtopBranchServerNames,
+  mapOverseasGmtEnvToGtopRegionServerName,
   resolveGtopBranchServerOptions,
 } from "./gtopBranchServers.ts";
 
@@ -103,5 +104,52 @@ describe("resolveGtopBranchServerOptions", () => {
       ],
     );
     assert.deepEqual(missingGtopBranchServerNames(opts), []);
+  });
+});
+
+describe("mapOverseasGmtEnvToGtopRegionServerName", () => {
+  it("maps pt/cvt/rct03~05 to GNG-* hosts", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("pt02", 2), "GNG-pt02");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("pt01", 2), "GNG-pt01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("cvt01", 2), "GNG-cvt01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("cvt02", 2), "GNG-cvt02");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct03", 2), "GNG-rct03");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct04", 2), "GNG-rct04");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct05", 2), "GNG-rct05");
+  });
+
+  it("maps rct01/rct02 to krad-* regardless of protocol", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct01", 1), "krad-rct01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct01", 2), "krad-rct01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct02", 1), "krad-rct02");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("rct02", 2), "krad-rct02");
+  });
+
+  it("maps ambiguous sbt via protocol", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("sbt", 1), "krad-sbt01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("sbt", 2), "krad-sbt02");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("sbt"), null);
+  });
+
+  it("maps sbt01/sbt02 directly", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("sbt01", 1), "krad-sbt01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("sbt02", 2), "krad-sbt02");
+  });
+
+  it("maps kd-cn-* hosts to themselves", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("kd-cn-rct01", 2), "kd-cn-rct01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("kd-cn-rct02", 2), "kd-cn-rct02");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("kd-cn-sbt01", 2), "kd-cn-sbt01");
+  });
+
+  it("returns null for CCS", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("CCS", 2), null);
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("(GRPC)CCS", 2), null);
+  });
+
+  it("accepts prefixed names like grpc-rct01 / gsgci_rct01", () => {
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("grpc-rct01", 2), "krad-rct01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("GSGCI_rct01", 1), "krad-rct01");
+    assert.equal(mapOverseasGmtEnvToGtopRegionServerName("grpc-sbt", 2), "krad-sbt02");
   });
 });

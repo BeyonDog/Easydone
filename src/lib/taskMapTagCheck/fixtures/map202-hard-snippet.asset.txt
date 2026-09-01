@@ -5,6 +5,11 @@
   - InstTags:
     - TriggerTag: 30000220
     Position: {x: 193.912, y: 7.0924907, z: 149.934}
+  MapMonsterRecords:
+  - InstTags:
+    - TriggerTag: 101220140
+    MonsterId: 2132201
+    Position: {x: 146.67297, y: 8.661576, z: 150.32797}
   MapLootRecords:
   MapTriggerRecords:
   - triggerTags:

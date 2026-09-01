@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ITEM_TYPE_REMARK_PRESET_EMOTE, ITEM_TYPE_REMARK_PRESET_FITTING_ROOM } from "./lib/xlsxHelpers";
+import { ITEM_TYPE_REMARK_PRESET_EMOTE, ITEM_TYPE_REMARK_PRESET_FITTING_ROOM, formatCustomKeywordChipLabel, formatCustomKeywordChipTitle } from "./lib/xlsxHelpers";
 import { qualityDotColor } from "./lib/qualityColors";
 import { FilterChipRowShell, PinnedMoreChipRow } from "./FilterChipBarShared";
 
@@ -150,6 +150,8 @@ export function ItemFilterChipBar({
             onToggle={onToggleCustomKeyword}
             onReorderBar={onReorderCustomKeywordPinned}
             onDemoteKey={onDemoteCustomKeyword}
+            formatLabel={formatCustomKeywordChipLabel}
+            formatTitle={formatCustomKeywordChipTitle}
             moreOpen={customMoreOpen}
             setMoreOpen={setCustomMoreOpen}
             moreRef={customMoreRef}

@@ -18,7 +18,7 @@ export {
   isMapConditionKind,
 } from "./parseConditions.ts";
 export { isExcludedFromMapCheck, isWangchengMapId, isIslandMapId, displayMapName, WANGCHENG_MAP_IDS, ISLAND_MAP_IDS } from "./constants.ts";
-export { parseMapDataAsset, mapDataHasTag, findTagRecords } from "./parseMapDataAsset.ts";
+export { parseMapDataAsset, mapDataHasTag, findTagRecords, findNearbyRecords, findNearbyRecordsMissingTag } from "./parseMapDataAsset.ts";
 export { buildMapVariants, parseMatchMapConfigJson } from "./resolveMapVariants.ts";
 export {
   resolveMapScopeForCondition,

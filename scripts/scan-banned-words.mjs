@@ -1,6 +1,9 @@
 /**
  * Scan CNRCT player-facing text against 屏蔽词库.pdf and export Excel report.
- * Usage: node scripts/scan-banned-words.mjs
+ * Usage:
+ *   node scripts/scan-banned-words.mjs
+ *   node scripts/scan-banned-words.mjs --finance
+ *   node scripts/scan-banned-words.mjs --modules=finance,mission,npc,camp --whitelist
  */
 import fs from "fs";
 import path from "path";
@@ -10,7 +13,21 @@ import XLSX from "xlsx";
 const CNRCT = "D:/WorkSpacelml/Branches/CNRCT";
 const PDF_PATH = "C:/Users/user/Desktop/屏蔽词库.pdf";
 const OUT_PATH = "C:/Users/user/Desktop/屏蔽词扫描结果.xlsx";
+const FOUR_MODULE_OUT_PATH =
+  "C:/Users/user/Desktop/屏蔽词扫描结果_四模块_剔除白名单.xlsx";
 const FINANCE_OUT_PATH = "C:/Users/user/Desktop/理财助手违禁词扫描.xlsx";
+
+/** 白名单：这些词不作为违禁词命中 */
+const WORD_WHITELIST = new Set(["出售", "购买", "价格", "不能", "售卖"]);
+
+const MODULE_ALIASES = {
+  finance: "理财助手(批量处理)",
+  mission: "任务",
+  npc: "NPC对话",
+  camp: "营地/升级",
+};
+
+const DEFAULT_FOUR_MODULES = new Set(Object.values(MODULE_ALIASES));
 const BIZ_CTRL_DIR =
   "D:/WorkSpacelml/Branches/CNRCT/Client/Assets/Scripts/KradGame/UI/Controller/BusinessmanControllers";
 
@@ -37,6 +54,33 @@ const CATEGORY_HEADERS = new Set([
 ]);
 
 /** @typedef {{ module: string, file: string, id: string, field: string, stringKey: string, text: string }} CorpusEntry */
+
+/** @param {string[]} hits */
+function filterHits(hits) {
+  return hits.filter((w) => !WORD_WHITELIST.has(w));
+}
+
+function parseCliArgs() {
+  const args = process.argv.slice(2);
+  const modulesArg = args.find((a) => a.startsWith("--modules="));
+  const outArg = args.find((a) => a.startsWith("--out="));
+  const moduleFilter = modulesArg
+    ? new Set(
+        modulesArg
+          .slice("--modules=".length)
+          .split(",")
+          .map((s) => MODULE_ALIASES[s.trim()] || s.trim())
+          .filter(Boolean)
+      )
+    : null;
+  return {
+    financeOnly: args.includes("--finance"),
+    fourModuleScan: Boolean(moduleFilter),
+    moduleFilter: moduleFilter || DEFAULT_FOUR_MODULES,
+    useWhitelist: args.includes("--whitelist") || Boolean(moduleFilter),
+    outPath: outArg ? outArg.slice("--out=".length) : FOUR_MODULE_OUT_PATH,
+  };
+}
 
 /** @param {string} key */
 function classifyModule(key) {
@@ -354,8 +398,10 @@ function collectFinanceHelper(loc) {
  * @param {CorpusEntry[]} corpus
  * @param {string[]} bannedWords
  * @param {RegExp[]} matchers
+ * @param {{ useWhitelist?: boolean, includeEnglish?: boolean }} [options]
  */
-function scanCorpus(corpus, bannedWords, matchers) {
+function scanCorpus(corpus, bannedWords, matchers, options = {}) {
+  const { useWhitelist = false, includeEnglish = true } = options;
   /** @type {Record<string, unknown>[]} */
   const bannedRows = [];
   /** @type {Record<string, unknown>[]} */
@@ -363,7 +409,8 @@ function scanCorpus(corpus, bannedWords, matchers) {
   const englishSeen = new Set();
 
   for (const e of corpus) {
-    const hits = findBannedMatches(e.text, matchers, bannedWords);
+    let hits = findBannedMatches(e.text, matchers, bannedWords);
+    if (useWhitelist) hits = filterHits(hits);
     if (hits.length) {
       bannedRows.push({
         模块: e.module,
@@ -376,20 +423,22 @@ function scanCorpus(corpus, bannedWords, matchers) {
         命中数: hits.length,
       });
     }
-    const frags = extractEnglishFragments(e.text);
-    if (frags.length) {
-      const sig = `${e.stringKey}|${e.text}`;
-      if (!englishSeen.has(sig)) {
-        englishSeen.add(sig);
-        englishRows.push({
-          模块: e.module,
-          文件: e.file,
-          ID: e.id,
-          字段: e.field,
-          StringKey: e.stringKey,
-          原文: e.text.length > 500 ? e.text.slice(0, 500) + "…" : e.text,
-          英文字母片段: frags.join(" | "),
-        });
+    if (includeEnglish) {
+      const frags = extractEnglishFragments(e.text);
+      if (frags.length) {
+        const sig = `${e.stringKey}|${e.text}`;
+        if (!englishSeen.has(sig)) {
+          englishSeen.add(sig);
+          englishRows.push({
+            模块: e.module,
+            文件: e.file,
+            ID: e.id,
+            字段: e.field,
+            StringKey: e.stringKey,
+            原文: e.text.length > 500 ? e.text.slice(0, 500) + "…" : e.text,
+            英文字母片段: frags.join(" | "),
+          });
+        }
       }
     }
   }
@@ -683,8 +732,121 @@ async function runFinanceScan(bannedWords, skippedShort, loc, matchers) {
   return { bannedRows, englishRows, financeCorpus };
 }
 
+/**
+ * @param {Map<string, string>} loc
+ * @param {Set<string>} moduleFilter
+ * @returns {CorpusEntry[]}
+ */
+function collectFourModuleCorpus(loc, moduleFilter) {
+  /** @type {CorpusEntry[]} */
+  const entries = [];
+  const seen = new Set();
+
+  /** @param {CorpusEntry} e */
+  function add(e) {
+    if (!moduleFilter.has(e.module)) return;
+    const sig = `${e.module}|${e.stringKey}|${e.text}|${e.field}|${e.id}|${e.file}`;
+    if (seen.has(sig)) return;
+    seen.add(sig);
+    entries.push(e);
+  }
+
+  if (moduleFilter.has("理财助手(批量处理)")) {
+    for (const e of collectFinanceHelper(loc)) add(e);
+  }
+
+  const otherModules = new Set(
+    [...moduleFilter].filter((m) => m !== "理财助手(批量处理)")
+  );
+  if (otherModules.size) {
+    for (const e of collectCorpus(loc)) {
+      if (otherModules.has(e.module)) add(e);
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * @param {string[]} bannedWords
+ * @param {string[]} skippedShort
+ * @param {Map<string, string>} loc
+ * @param {RegExp[]} matchers
+ * @param {{ moduleFilter: Set<string>, outPath: string }} options
+ */
+async function runFourModuleScan(bannedWords, skippedShort, loc, matchers, options) {
+  const { moduleFilter, outPath } = options;
+  console.log("Collecting four-module corpus...");
+  const corpus = collectFourModuleCorpus(loc, moduleFilter);
+  console.log(`Four-module corpus entries: ${corpus.length}`);
+
+  console.log("Scanning with whitelist...");
+  const { bannedRows } = scanCorpus(corpus, bannedWords, matchers, {
+    useWhitelist: true,
+    includeEnglish: false,
+  });
+
+  const moduleCounts = {};
+  for (const r of bannedRows) {
+    const mod = String(r["模块"]);
+    moduleCounts[mod] = (moduleCounts[mod] || 0) + 1;
+  }
+
+  const metaRows = [
+    {
+      项: "扫描时间",
+      值: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }),
+    },
+    { 项: "CNRCT路径", 值: CNRCT },
+    { 项: "词库来源", 值: PDF_PATH },
+    { 项: "词库词条数(长度>=2)", 值: bannedWords.length },
+    {
+      项: "白名单(不作为违禁词)",
+      值: [...WORD_WHITELIST].join("、"),
+    },
+    {
+      项: "扫描模块",
+      值: [...moduleFilter].join("、"),
+    },
+    { 项: "扫描语料条", 值: corpus.length },
+    { 项: "违禁词命中条(剔除白名单后)", 值: bannedRows.length },
+    ...Object.entries(moduleCounts)
+      .sort(([a], [b]) => a.localeCompare(b, "zh"))
+      .map(([mod, count]) => ({ 项: `模块命中: ${mod}`, 值: count })),
+    { 项: "短词策略", 值: "长度<2的词条不参与子串匹配" },
+    {
+      项: "说明",
+      值: "词库为子串匹配，游戏常用词可能误报，需人工复核",
+    },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(bannedRows),
+    "违禁词命中"
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(metaRows),
+    "扫描说明"
+  );
+  XLSX.writeFile(wb, outPath);
+
+  console.log(`\nDone. Output: ${outPath}`);
+  console.log(`违禁词命中(剔除白名单后): ${bannedRows.length}`);
+  for (const [mod, count] of Object.entries(moduleCounts).sort(([a], [b]) =>
+    a.localeCompare(b, "zh")
+  )) {
+    console.log(`  ${mod}: ${count}`);
+  }
+
+  return { bannedRows, corpus, moduleCounts };
+}
+
 async function main() {
-  const financeOnly = process.argv.includes("--finance");
+  const cli = parseCliArgs();
+  const financeOnly = cli.financeOnly;
 
   console.log("Reading PDF...");
   const pdfBuf = fs.readFileSync(PDF_PATH);
@@ -704,6 +866,14 @@ async function main() {
 
   if (financeOnly) {
     await runFinanceScan(bannedWords, skippedShort, loc, matchers);
+    return;
+  }
+
+  if (cli.fourModuleScan) {
+    await runFourModuleScan(bannedWords, skippedShort, loc, matchers, {
+      moduleFilter: cli.moduleFilter,
+      outPath: cli.outPath,
+    });
     return;
   }
 
