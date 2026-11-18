@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { checkForAppUpdate, type UpdateOffer } from "./lib/appUpdate";
+import {
+  clearPendingUpdateVersion,
+  evaluatePendingUpdate,
+} from "./lib/pendingUpdate.ts";
 import { UPDATE_UP_TO_DATE_MESSAGE } from "./lib/updateErrorText";
 import { isUpdaterConfigured, updateManifestUrl } from "./lib/updateManifest";
 
@@ -17,12 +21,25 @@ export function useAppUpdater(options?: UseAppUpdaterOptions) {
   const [checking, setChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [currentVersion, setCurrentVersion] = useState<string>("…");
+  const [pendingInstallFailure, setPendingInstallFailure] = useState<string | null>(null);
   const manifestUrl = updateManifestUrl() ?? "";
 
   useEffect(() => {
-    void getVersion()
-      .then(setCurrentVersion)
-      .catch(() => setCurrentVersion("—"));
+    void (async () => {
+      try {
+        const version = await getVersion();
+        setCurrentVersion(version);
+        const pending = evaluatePendingUpdate(version);
+        if (pending.kind === "failed") {
+          setPendingInstallFailure(pending.message);
+          setStatusMessage(pending.message);
+        } else if (pending.kind === "success") {
+          clearPendingUpdateVersion();
+        }
+      } catch {
+        setCurrentVersion("—");
+      }
+    })();
   }, []);
 
   const runCheck = useCallback(async (silent = false): Promise<string | null> => {
@@ -76,6 +93,11 @@ export function useAppUpdater(options?: UseAppUpdaterOptions) {
     setDismissed(true);
   }, []);
 
+  const dismissPendingInstallFailure = useCallback(() => {
+    setPendingInstallFailure(null);
+    clearPendingUpdateVersion();
+  }, []);
+
   return {
     offer: offer && !dismissed ? offer : null,
     dismiss,
@@ -85,5 +107,7 @@ export function useAppUpdater(options?: UseAppUpdaterOptions) {
     configured: isUpdaterConfigured(),
     currentVersion,
     manifestUrl,
+    pendingInstallFailure,
+    dismissPendingInstallFailure,
   };
 }

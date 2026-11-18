@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { assertSigningKeyConsistent } from "./signing-key-guard.mjs";
+import { assertValidSemver } from "./assert-semver.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -70,21 +71,22 @@ function readVersion() {
   const tauri = readJson(path.join(root, "src-tauri", "tauri.conf.json"));
   const v = pkg.version || tauri.version;
   if (!v) throw new Error("无法读取版本号");
-  return v;
+  return assertValidSemver(v, "项目版本号");
 }
 
 function writeProjectVersion(version) {
+  const next = assertValidSemver(version, "发布版本号");
   const pkgPath = path.join(root, "package.json");
   const tauriPath = path.join(root, "src-tauri", "tauri.conf.json");
   const pkg = readJson(pkgPath);
-  pkg.version = version;
+  pkg.version = next;
   fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf8");
   const tauri = readJson(tauriPath);
-  tauri.version = version;
+  tauri.version = next;
   fs.writeFileSync(tauriPath, `${JSON.stringify(tauri, null, 2)}\n`, "utf8");
   const cargoPath = path.join(root, "src-tauri", "Cargo.toml");
   let cargo = fs.readFileSync(cargoPath, "utf8");
-  cargo = cargo.replace(/^version = ".*"$/m, `version = "${version}"`);
+  cargo = cargo.replace(/^version = ".*"$/m, `version = "${next}"`);
   fs.writeFileSync(cargoPath, cargo, "utf8");
 }
 
@@ -95,7 +97,7 @@ function writeProjectVersion(version) {
 function prepareVersion(opts = {}) {
   const requested = opts.version?.trim();
   const current = readVersion();
-  const version = requested || current;
+  const version = assertValidSemver(requested || current, "发布版本号");
   if (requested && requested !== current) {
     console.log(`[publish] 版本号 ${current} → ${version}`);
     writeProjectVersion(version);
@@ -339,6 +341,8 @@ async function copyAndPublishManifest(cfg, versionCtx, artifacts) {
 
 /** Local build only: no version bump, no Update/ copy. */
 export async function buildOnly() {
+  // Fail early with a clear message (same check as unlock-build / beforeBuildCommand).
+  readVersion();
   runBuild();
   const requireSig = requireInstallerSignatureFromConfig();
   const { exePath, sigPath, exeName } = findNsisArtifacts({

@@ -40,6 +40,7 @@ function baseConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     gmtBaseUrl: "",
     gmtCookie: "",
     gmtCnCookie: "",
+    gmtPreliveCookie: "",
     gmtEnvId: null,
     gmtEnvName: null,
     gmtOverseasEnvId: null,

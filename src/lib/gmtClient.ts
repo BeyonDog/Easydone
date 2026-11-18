@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { GmtLoginTarget } from "./gmtLoginTarget.ts";
 import {
   buildAdminAddExpExecBody,
   buildAdminClearTimeoutMatchInfoExecBody,
@@ -206,46 +207,28 @@ export async function gmtExecAdminModifyRankPoints(
   });
 }
 
-export async function gmtOpenLoginWindow(baseUrl: string): Promise<void> {
+export type { GmtLoginTarget } from "./gmtLoginTarget.ts";
+export {
+  applyGmtLoginCookie,
+  gmtBaseUrlForTarget,
+  gmtCookieForTarget,
+  gmtLoginTargetFromConfig,
+  gmtLoginTargetLabel,
+  gmtSessionSliceForTarget,
+  gmtSessionSliceFromConfig,
+} from "./gmtLoginTarget.ts";
+
+export async function gmtOpenLoginWindow(target: GmtLoginTarget, baseUrl: string): Promise<void> {
   await invoke("gmt_open_login_window", {
+    target,
     baseUrl: baseUrl.trim() || DEFAULT_GMT_BASE_URL,
   });
 }
 
-export async function gmtCollectLoginCookies(): Promise<string> {
-  return invoke<string>("gmt_collect_login_cookies");
+export async function gmtCollectLoginCookies(target: GmtLoginTarget): Promise<string> {
+  return invoke<string>("gmt_collect_login_cookies", { target });
 }
 
-export async function gmtCloseLoginWindow(): Promise<void> {
-  await invoke("gmt_close_login_window");
-}
-
-export function gmtSessionSliceFromConfig(c: {
-  gmtPlatform?: "overseas" | "cn";
-  gmtPreliveEnabled?: boolean;
-  gmtBaseUrl?: string;
-  gmtCookie?: string;
-  gmtCnCookie?: string;
-  gmtEnvId?: number | null;
-}): GmtSessionSlice {
-  const isCn = c.gmtPlatform === "cn";
-  if (isCn) {
-    return {
-      gmtBaseUrl: CN_GMT_BASE_URL,
-      gmtCookie: c.gmtCnCookie ?? "",
-      gmtEnvId: c.gmtEnvId ?? null,
-    };
-  }
-  if (isPreliveGmtEnabled(c)) {
-    return {
-      gmtBaseUrl: PRELIVE_GMT_BASE_URL,
-      gmtCookie: c.gmtCookie ?? "",
-      gmtEnvId: c.gmtEnvId ?? PRELIVE_GMT_ENV.id,
-    };
-  }
-  return {
-    gmtBaseUrl: c.gmtBaseUrl?.trim() || DEFAULT_GMT_BASE_URL,
-    gmtCookie: c.gmtCookie ?? "",
-    gmtEnvId: c.gmtEnvId ?? null,
-  };
+export async function gmtCloseLoginWindow(target?: GmtLoginTarget): Promise<void> {
+  await invoke("gmt_close_login_window", { target: target ?? null });
 }

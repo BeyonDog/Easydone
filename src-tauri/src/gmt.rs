@@ -1,9 +1,12 @@
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
-const LOGIN_WINDOW_LABEL: &str = "gmt-login";
+const LOGIN_LABEL_OVERSEAS: &str = "gmt-login-overseas";
+const LOGIN_LABEL_CN: &str = "gmt-login-cn";
+const LOGIN_LABEL_PRELIVE: &str = "gmt-login-pr";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +64,39 @@ fn normalize_base_url(raw: &str) -> String {
     } else {
         t.to_string()
     }
+}
+
+fn login_window_label(target: &str) -> Result<&'static str, String> {
+    match target.trim() {
+        "overseas" => Ok(LOGIN_LABEL_OVERSEAS),
+        "cn" => Ok(LOGIN_LABEL_CN),
+        "prelive" => Ok(LOGIN_LABEL_PRELIVE),
+        other => Err(format!("未知 GMT 登录目标: {other}")),
+    }
+}
+
+fn login_data_subdirectory(target: &str) -> &'static str {
+    match target {
+        "cn" => "gmt-login-cn",
+        "prelive" => "gmt-login-pr",
+        _ => "gmt-login-overseas",
+    }
+}
+
+fn login_window_title(target: &str) -> &'static str {
+    match target {
+        "cn" => "GMT 国服登录 (Garena SSO)",
+        "prelive" => "GMT 海外(PR)登录 (Garena SSO)",
+        _ => "GMT 海外登录 (Garena SSO)",
+    }
+}
+
+fn login_data_directory(app: &AppHandle, target: &str) -> Result<PathBuf, String> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("无法解析应用数据目录: {e}"))?;
+    Ok(base.join(login_data_subdirectory(target)))
 }
 
 fn build_headers(cookie: &str, env_header: Option<&str>) -> Result<HeaderMap, String> {
@@ -269,27 +305,36 @@ pub async fn gmt_exec(
 }
 
 #[tauri::command]
-pub async fn gmt_open_login_window(app: AppHandle, base_url: String) -> Result<(), String> {
+pub async fn gmt_open_login_window(
+    app: AppHandle,
+    target: String,
+    base_url: String,
+) -> Result<(), String> {
+    let label = login_window_label(&target)?;
     let base = normalize_base_url(&base_url);
     let parsed: Url = base.parse().map_err(|e| format!("URL 无效: {e}"))?;
     let url = WebviewUrl::External(parsed);
-    if let Some(w) = app.get_webview_window(LOGIN_WINDOW_LABEL) {
+    if let Some(w) = app.get_webview_window(label) {
         w.set_focus().map_err(|e| e.to_string())?;
         return Ok(());
     }
-    WebviewWindowBuilder::new(&app, LOGIN_WINDOW_LABEL, url)
-        .title("GMT 登录 (Garena SSO)")
+    let data_dir = login_data_directory(&app, &target)?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("无法创建登录数据目录: {e}"))?;
+    WebviewWindowBuilder::new(&app, label, url)
+        .title(login_window_title(&target))
         .inner_size(960.0, 720.0)
         .center()
+        .data_directory(data_dir)
         .build()
         .map_err(|e| format!("无法打开登录窗口: {e}"))?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn gmt_collect_login_cookies(app: AppHandle) -> Result<String, String> {
+pub async fn gmt_collect_login_cookies(app: AppHandle, target: String) -> Result<String, String> {
+    let label = login_window_label(&target)?;
     let w = app
-        .get_webview_window(LOGIN_WINDOW_LABEL)
+        .get_webview_window(label)
         .ok_or("请先打开 GMT 登录窗口")?;
     let cookies = w.cookies().map_err(|e| format!("读取 Cookie 失败: {e}"))?;
     if cookies.is_empty() {
@@ -304,9 +349,20 @@ pub async fn gmt_collect_login_cookies(app: AppHandle) -> Result<String, String>
 }
 
 #[tauri::command]
-pub async fn gmt_close_login_window(app: AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window(LOGIN_WINDOW_LABEL) {
-        w.close().map_err(|e| e.to_string())?;
+pub async fn gmt_close_login_window(app: AppHandle, target: Option<String>) -> Result<(), String> {
+    let labels: Vec<&str> = if let Some(t) = target {
+        vec![login_window_label(&t)?]
+    } else {
+        vec![
+            LOGIN_LABEL_OVERSEAS,
+            LOGIN_LABEL_CN,
+            LOGIN_LABEL_PRELIVE,
+        ]
+    };
+    for label in labels {
+        if let Some(w) = app.get_webview_window(label) {
+            w.close().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

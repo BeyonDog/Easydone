@@ -16,6 +16,7 @@ import {
   windowsArtifact,
   type UpdateManifest,
 } from "./updateManifest";
+import { setPendingUpdateVersion } from "./pendingUpdate.ts";
 
 export type UpdateOffer = {
   update: Update;
@@ -45,6 +46,14 @@ export function isNewerVersion(current: string, next: string): boolean {
     if (b[i] < a[i]) return false;
   }
   return false;
+}
+
+/** Windows: NSIS updater quits/restarts the app; avoid a second relaunch race. */
+export function isWindowsPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const uaData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  const platform = uaData?.platform || navigator.platform || "";
+  return /win/i.test(platform);
 }
 
 async function fetchManifestViaHttp(url: string): Promise<UpdateManifest> {
@@ -172,9 +181,15 @@ export async function downloadAndInstallUpdate(
   offer: UpdateOffer,
   onProgress: (p: DownloadProgress) => void,
 ): Promise<void> {
+  const targetVersion = offer.update.version?.trim() || offer.manifest?.version?.trim() || "";
+  if (targetVersion) {
+    setPendingUpdateVersion(targetVersion);
+  }
+
   onProgress({ phase: "downloading", percent: 0, message: "正在下载更新…" });
   let downloaded = 0;
   let contentLength = 0;
+  const onWindows = isWindowsPlatform();
 
   await offer.update.downloadAndInstall((event) => {
     switch (event.event) {
@@ -200,10 +215,26 @@ export async function downloadAndInstallUpdate(
         }
         break;
       case "Finished":
-        onProgress({ phase: "installing", percent: 100, message: "正在安装，应用将自动退出…" });
+        onProgress({
+          phase: "installing",
+          percent: 100,
+          message: onWindows
+            ? "正在安装：安装程序将关闭并重启应用…"
+            : "正在安装，应用将自动退出…",
+        });
         break;
     }
   });
+
+  if (onWindows) {
+    // NSIS /UPDATE already restarts the app; calling relaunch() can reopen the old exe.
+    onProgress({
+      phase: "done",
+      percent: 100,
+      message: "安装程序已启动，请按提示完成安装并等待自动重启…",
+    });
+    return;
+  }
 
   onProgress({ phase: "done", percent: 100, message: "安装完成，正在重启…" });
   await relaunch();

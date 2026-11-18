@@ -10,6 +10,7 @@ import { isSigningPasswordConfigured, loadSigningEnv } from "./publish-update.mj
 import { isGitAvailable as resolveIsGitAvailable } from "./resolve-git.mjs";
 import { ensurePublishConfig } from "./ensure-publish-config.mjs";
 import { checkSigningKeyConsistent } from "./signing-key-guard.mjs";
+import { assertValidSemver } from "./assert-semver.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const guiDir = path.join(root, "publish-gui");
@@ -543,6 +544,7 @@ function openBrowser(url) {
  * @param {string} notes
  */
 function startJob(action, version, notes) {
+  if (version) assertValidSemver(version, "发布版本号");
   const scriptPath = path.join(root, "scripts", "publish-update.mjs");
   const args = [scriptPath];
 
@@ -570,6 +572,12 @@ function startJob(action, version, notes) {
   publishJob.result = null;
   publishJob.error = null;
   publishJob.startedAt = Date.now();
+
+  try {
+    if (fs.existsSync(JOB_RESULT_FILE)) fs.unlinkSync(JOB_RESULT_FILE);
+  } catch {
+    /* ignore */
+  }
 
   try {
     fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
@@ -630,7 +638,8 @@ const mime = {
 function jobPayload() {
   healPublishJobState();
   let result = publishJob.result;
-  if (!result && !publishJob.running && publishJob.log) {
+  // Do not fall back to a previous successful job file when this run failed or is still running.
+  if (!result && !publishJob.running && !publishJob.error && publishJob.log) {
     result = parseResultFromLog(publishJob.log, publishJob.kind) ?? readJobResultFile();
   }
   return {

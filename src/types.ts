@@ -189,6 +189,8 @@ export interface AppConfig {
   gmtBaseUrl: string;
   gmtCookie: string;
   gmtCnCookie: string;
+  /** 海外 PreLive（PR）独立 GMT SSO Cookie */
+  gmtPreliveCookie: string;
   gmtEnvId: number | null;
   gmtEnvName: string | null;
   gmtOverseasEnvId: number | null;

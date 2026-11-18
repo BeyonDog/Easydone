@@ -28,6 +28,7 @@ function baseConfig(): AppConfig {
     gmtBaseUrl: "",
     gmtCookie: "c",
     gmtCnCookie: "",
+    gmtPreliveCookie: "",
     gmtEnvId: 17,
     gmtEnvName: "rct01",
     gmtOverseasEnvId: null,

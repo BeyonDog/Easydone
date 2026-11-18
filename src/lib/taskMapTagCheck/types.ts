@@ -119,7 +119,7 @@ export interface TagCheckIssue {
   sceneFile?: string;
   editorObjectName?: string;
   position?: { x: number; y: number; z: number };
-  recordKind?: "chest" | "loot" | "trigger";
+  recordKind?: "chest" | "loot" | "trigger" | "monster";
   highValueZone?: HighValueZone;
   message: string;
 }

@@ -5,6 +5,8 @@ import type { AppConfig } from "./types.ts";
 import { ServerWideSendSettingsTab } from "./ServerWideSendSettingsTab.tsx";
 import { TemplateRecycleBinTab } from "./TemplateRecycleBinTab.tsx";
 import { GtopSettingsSection } from "./GtopSettingsSection.tsx";
+import { GmtSettingsSection } from "./GmtSettingsSection.tsx";
+import type { GmtLoginTarget } from "./lib/gmtLoginTarget.ts";
 import { SettingsUpdateSection } from "./SettingsUpdateSection.tsx";
 import { SidebarColorSettings } from "./SidebarColorSettings.tsx";
 import {
@@ -51,6 +53,9 @@ export type SettingsModalProps = {
   gtopLoggedIn: boolean;
   onOpenGtopLogin: () => void;
   onCompleteGtopLogin: () => void;
+  currentGmtLoginTarget: GmtLoginTarget;
+  onOpenGmtLogin: (target: GmtLoginTarget) => void;
+  onCompleteGmtLogin: (target: GmtLoginTarget) => void | Promise<void>;
   appUpdaterConfigured: boolean;
   appUpdaterChecking: boolean;
   appUpdaterStatusMessage: string | null;
@@ -70,6 +75,9 @@ export function SettingsModal({
   gtopLoggedIn,
   onOpenGtopLogin,
   onCompleteGtopLogin,
+  currentGmtLoginTarget,
+  onOpenGmtLogin,
+  onCompleteGmtLogin,
   appUpdaterConfigured,
   appUpdaterChecking,
   appUpdaterStatusMessage,
@@ -79,7 +87,7 @@ export function SettingsModal({
   onPurgeRecycledTemplate,
   onRestoreRecycledTemplate,
 }: SettingsModalProps) {
-  const [settingsTab, setSettingsTab] = useState<"general" | "serverWide" | "gtop" | "recycle">("general");
+  const [settingsTab, setSettingsTab] = useState<"general" | "serverWide" | "gmt" | "gtop" | "recycle">("general");
   const [ex, setEx] = useState(config.excelWorkspaceRoot ?? "");
   const [themeHex, setThemeHex] = useState(config.themeAccentHex ?? DEFAULT_THEME_ACCENT_HEX);
   const [themeBgHex, setThemeBgHex] = useState(config.themeBackgroundHex ?? DEFAULT_THEME_BACKGROUND_HEX);
@@ -271,6 +279,15 @@ export function SettingsModal({
           <button
             type="button"
             role="tab"
+            aria-selected={settingsTab === "gmt"}
+            className={`btn${settingsTab === "gmt" ? " active" : ""}`}
+            onClick={() => setSettingsTab("gmt")}
+          >
+            GMT
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={settingsTab === "gtop"}
             className={`btn${settingsTab === "gtop" ? " active" : ""}`}
             onClick={() => setSettingsTab("gtop")}
@@ -291,7 +308,7 @@ export function SettingsModal({
           <button type="button" className="btn" onClick={closeSettings}>
             取消
           </button>
-          {settingsTab === "gtop" || settingsTab === "recycle" ? (
+          {settingsTab === "gtop" || settingsTab === "gmt" || settingsTab === "recycle" ? (
             <button type="button" className="btn primary" onClick={onClose}>
               关闭
             </button>
@@ -304,6 +321,14 @@ export function SettingsModal({
         <div className="modal-scroll-body">
           {settingsTab === "serverWide" ? (
             <ServerWideSendSettingsTab draft={serverWideDraft} onChange={setServerWideDraft} />
+          ) : null}
+          {settingsTab === "gmt" ? (
+            <GmtSettingsSection
+              config={config}
+              currentLoginTarget={currentGmtLoginTarget}
+              onOpenGmtLogin={onOpenGmtLogin}
+              onCompleteGmtLogin={onCompleteGmtLogin}
+            />
           ) : null}
           {settingsTab === "gtop" ? (
             <GtopSettingsSection

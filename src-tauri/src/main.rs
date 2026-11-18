@@ -263,6 +263,8 @@ struct AppConfig {
     #[serde(default)]
     gmt_cn_cookie: String,
     #[serde(default)]
+    gmt_prelive_cookie: String,
+    #[serde(default)]
     gmt_env_id: Option<i64>,
     #[serde(default)]
     gmt_env_name: Option<String>,
@@ -409,6 +411,7 @@ impl Default for AppConfig {
             gmt_base_url: default_gmt_base_url(),
             gmt_cookie: String::new(),
             gmt_cn_cookie: String::new(),
+            gmt_prelive_cookie: String::new(),
             gmt_env_id: None,
             gmt_env_name: None,
             gmt_overseas_env_id: None,

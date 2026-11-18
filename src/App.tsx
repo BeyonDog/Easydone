@@ -165,6 +165,13 @@ import {
   PRELIVE_GMT_ENV,
   type GmtEnvEntry,
 } from "./lib/gmtClient";
+import {
+  applyGmtLoginCookie,
+  gmtLoginTargetFromConfig,
+  gmtLoginTargetLabel,
+  gmtSessionSliceForTarget,
+  type GmtLoginTarget,
+} from "./lib/gmtLoginTarget.ts";
 import { evaluateGmtItemSendReadiness } from "./lib/gmtSendReadiness";
 import {
   formatTaskCompleteToast,
@@ -277,6 +284,7 @@ import {
 } from "./lib/gtopUploadConfig.ts";
 import { TopbarUpdateControls } from "./TopbarUpdateControls.tsx";
 import { UpdateAvailableModal } from "./UpdateAvailableModal.tsx";
+import { UpdateInstallFailedModal } from "./UpdateInstallFailedModal.tsx";
 import { useAppUpdater } from "./useAppUpdater.ts";
 import {
   buildSendItemsFromSelection,
@@ -1060,6 +1068,7 @@ const defaultConfig = (): AppConfig => ({
   gmtBaseUrl: DEFAULT_GMT_BASE_URL,
   gmtCookie: "",
   gmtCnCookie: "",
+  gmtPreliveCookie: "",
   gmtEnvId: null,
   gmtEnvName: null,
   gmtOverseasEnvId: null,
@@ -1128,6 +1137,7 @@ export default function App() {
   const cnGtopRequestIdRef = useRef(0);
   const overseasGtopRequestIdRef = useRef(0);
   const activeGmtPlatformRef = useRef<GmtPlatform>("overseas");
+  const activeGmtLoginTargetRef = useRef<GmtLoginTarget>("overseas");
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [itemAoa, setItemAoa] = useState<SheetMatrix | null>(null);
@@ -1262,6 +1272,7 @@ export default function App() {
   const filterSheetOpen = itemFilterModalOpen || taskFilterModalOpen;
   const [gmtLoggedIn, setGmtLoggedIn] = useState(false);
   const [gmtLoginModalOpen, setGmtLoginModalOpen] = useState(false);
+  const [gmtLoginModalTarget, setGmtLoginModalTarget] = useState<GmtLoginTarget>("overseas");
   const [gmtEnvs, setGmtEnvs] = useState<GmtEnvEntry[]>([]);
   const [gmtSessionChecking, setGmtSessionChecking] = useState(false);
   const [gmtAccountIdDraft, setGmtAccountIdDraft] = useState("");
@@ -1350,7 +1361,10 @@ export default function App() {
 
   const gmtAccountIdDraftRef = useRef("");
   useEffect(() => {
-    if (config) activeGmtPlatformRef.current = config.gmtPlatform;
+    if (config) {
+      activeGmtPlatformRef.current = config.gmtPlatform;
+      activeGmtLoginTargetRef.current = gmtLoginTargetFromConfig(config);
+    }
   }, [config]);
   useEffect(() => {
     gmtAccountIdDraftRef.current = gmtAccountIdDraft;
@@ -1442,6 +1456,7 @@ export default function App() {
       gmtBaseUrl: (c as AppConfig).gmtBaseUrl?.trim() || DEFAULT_GMT_BASE_URL,
       gmtCookie: (c as AppConfig).gmtCookie ?? "",
       gmtCnCookie: (c as Partial<AppConfig>).gmtCnCookie ?? "",
+      gmtPreliveCookie: (c as Partial<AppConfig>).gmtPreliveCookie ?? "",
       gmtEnvId: preliveOn
         ? preliveEnvOk && loadedGmtEnvId != null
           ? loadedGmtEnvId
@@ -1811,18 +1826,23 @@ export default function App() {
     };
   }, [loadExcelData, wizardOpen]);
 
-  const onGmtSessionVerifiedLoggedIn = useCallback(() => {
-    setGmtLoggedIn(true);
-    setGmtLoginModalOpen(false);
-    void gmtCloseLoginWindow();
-  }, []);
+  const onGmtSessionVerifiedLoggedIn = useCallback(
+    (target?: GmtLoginTarget) => {
+      setGmtLoggedIn(true);
+      if (!gmtLoginModalOpen) return;
+      setGmtLoginModalOpen(false);
+      void gmtCloseLoginWindow(target ?? gmtLoginModalTarget);
+    },
+    [gmtLoginModalOpen, gmtLoginModalTarget],
+  );
 
   const refreshGmtSession = useCallback(
     async (cfg: AppConfig) => {
       const requestId = ++gmtSessionRequestIdRef.current;
+      const cfgTarget = gmtLoginTargetFromConfig(cfg);
       const isCurrent = () =>
         requestId === gmtSessionRequestIdRef.current &&
-        activeGmtPlatformRef.current === cfg.gmtPlatform;
+        activeGmtLoginTargetRef.current === cfgTarget;
       setGmtSessionChecking(true);
       try {
         const slice = gmtSessionSliceFromConfig(cfg);
@@ -1830,7 +1850,6 @@ export default function App() {
         if (!isCurrent()) return;
         setGmtLoggedIn(r.loggedIn);
         if (r.loggedIn) {
-          onGmtSessionVerifiedLoggedIn();
           let envs: GmtEnvEntry[];
           if (cfg.gmtPlatform === "cn") {
             envs = CN_GMT_ENV_OPTIONS;
@@ -1852,7 +1871,7 @@ export default function App() {
           );
           if (heal.kind === "persist") {
             const current = configRef.current;
-            if (!current || current.gmtPlatform !== cfg.gmtPlatform) return;
+            if (!current || gmtLoginTargetFromConfig(current) !== cfgTarget) return;
             void persist({
               ...current,
               ...heal.next,
@@ -1861,10 +1880,12 @@ export default function App() {
                     gmtCnEnvId: heal.next.gmtEnvId,
                     gmtCnEnvName: heal.next.gmtEnvName,
                   }
-                : {
-                    gmtOverseasEnvId: heal.next.gmtEnvId,
-                    gmtOverseasEnvName: heal.next.gmtEnvName,
-                  }),
+                : isPreliveGmtEnabled(cfg)
+                  ? {}
+                  : {
+                      gmtOverseasEnvId: heal.next.gmtEnvId,
+                      gmtOverseasEnvName: heal.next.gmtEnvName,
+                    }),
             });
             if (heal.toast) push(heal.toast);
           }
@@ -2108,7 +2129,7 @@ export default function App() {
   }, [config?.gtopCookie, config?.gtopBaseUrl, config?.gtopProject, refreshGtopSession, config]);
 
   const gmtSessionKey = config
-    ? `${config.gmtPlatform}\0${gmtSessionSliceFromConfig(config).gmtBaseUrl}\0${gmtSessionSliceFromConfig(config).gmtCookie}\0${config.gmtEnvId ?? ""}`
+    ? `${gmtLoginTargetFromConfig(config)}\0${gmtSessionSliceFromConfig(config).gmtBaseUrl}\0${gmtSessionSliceFromConfig(config).gmtCookie}\0${config.gmtEnvId ?? ""}`
     : "";
 
   useEffect(() => {
@@ -2119,51 +2140,66 @@ export default function App() {
 
   const ensureGmtLoggedIn = useCallback(async (): Promise<boolean> => {
     if (!config) return false;
+    const target = gmtLoginTargetFromConfig(config);
     if (gmtLoggedIn && gmtSessionSliceFromConfig(config).gmtCookie.trim()) {
-      onGmtSessionVerifiedLoggedIn();
+      onGmtSessionVerifiedLoggedIn(target);
       return true;
     }
     const r = await gmtSessionProbe(gmtSessionSliceFromConfig(config));
     if (r.loggedIn) {
-      onGmtSessionVerifiedLoggedIn();
+      onGmtSessionVerifiedLoggedIn(target);
       return true;
     }
+    setGmtLoginModalTarget(target);
     setGmtLoginModalOpen(true);
     return false;
   }, [config, gmtLoggedIn, onGmtSessionVerifiedLoggedIn]);
 
-  const completeGmtLogin = useCallback(async () => {
-    if (!config) return;
-    try {
-      const cookie = await gmtCollectLoginCookies();
-      const next =
-        config.gmtPlatform === "cn"
-          ? { ...config, gmtCnCookie: cookie }
-          : { ...config, gmtCookie: cookie };
-      await persist(next);
-      onGmtSessionVerifiedLoggedIn();
-      await refreshGmtSession(next);
-      push(`GMT ${config.gmtPlatform === "cn" ? "国服" : "海外"}已登录`);
-    } catch (e) {
-      push(`GMT 登录失败: ${e}`);
-    }
-  }, [config, persist, push, refreshGmtSession, onGmtSessionVerifiedLoggedIn]);
+  const completeGmtLogin = useCallback(
+    async (target?: GmtLoginTarget) => {
+      if (!config) return;
+      const loginTarget = target ?? gmtLoginTargetFromConfig(config);
+      try {
+        const cookie = await gmtCollectLoginCookies(loginTarget);
+        const next = applyGmtLoginCookie(config, loginTarget, cookie);
+        await persist(next);
+        const label = gmtLoginTargetLabel(loginTarget);
+        if (gmtLoginTargetFromConfig(config) === loginTarget) {
+          onGmtSessionVerifiedLoggedIn(loginTarget);
+          await refreshGmtSession(next);
+        } else {
+          setGmtLoginModalOpen(false);
+          void gmtCloseLoginWindow(loginTarget);
+        }
+        push(`GMT ${label}已登录`);
+      } catch (e) {
+        push(`GMT 登录失败: ${e}`);
+      }
+    },
+    [config, persist, push, refreshGmtSession, onGmtSessionVerifiedLoggedIn],
+  );
 
-  const openGmtLoginWindow = useCallback(async () => {
-    if (!config) return;
-    const slice = gmtSessionSliceFromConfig(config);
-    if (gmtLoggedIn && slice.gmtCookie.trim()) {
-      onGmtSessionVerifiedLoggedIn();
-      push(`GMT ${config.gmtPlatform === "cn" ? "国服" : "海外"}已登录`);
-      return;
-    }
-    try {
-      await gmtOpenLoginWindow(slice.gmtBaseUrl);
-      setGmtLoginModalOpen(true);
-    } catch (e) {
-      push(`打开 GMT 登录窗失败: ${e}`);
-    }
-  }, [config, gmtLoggedIn, push, onGmtSessionVerifiedLoggedIn]);
+  const openGmtLoginWindow = useCallback(
+    async (target?: GmtLoginTarget) => {
+      if (!config) return;
+      const loginTarget = target ?? gmtLoginTargetFromConfig(config);
+      setGmtLoginModalTarget(loginTarget);
+      const slice = gmtSessionSliceForTarget(config, loginTarget);
+      const isCurrentTarget = gmtLoginTargetFromConfig(config) === loginTarget;
+      if (isCurrentTarget && gmtLoggedIn && slice.gmtCookie.trim()) {
+        onGmtSessionVerifiedLoggedIn(loginTarget);
+        push(`GMT ${gmtLoginTargetLabel(loginTarget)}已登录`);
+        return;
+      }
+      try {
+        await gmtOpenLoginWindow(loginTarget, slice.gmtBaseUrl);
+        setGmtLoginModalOpen(true);
+      } catch (e) {
+        push(`打开 GMT 登录窗失败: ${e}`);
+      }
+    },
+    [config, gmtLoggedIn, push, onGmtSessionVerifiedLoggedIn],
+  );
 
   const changeGmtPlatform = useCallback(
     async (target: GmtPlatform) => {
@@ -2171,6 +2207,7 @@ export default function App() {
       gmtSessionRequestIdRef.current += 1;
       cnGtopRequestIdRef.current += 1;
       activeGmtPlatformRef.current = target;
+      activeGmtLoginTargetRef.current = target === "cn" ? "cn" : "overseas";
       const next = switchGmtPlatform(config, target);
       setGmtLoggedIn(false);
       setGmtEnvs(target === "cn" ? CN_GMT_ENV_OPTIONS : []);
@@ -2182,6 +2219,7 @@ export default function App() {
         await refreshGmtSession(next);
       } catch (e) {
         activeGmtPlatformRef.current = config.gmtPlatform;
+        activeGmtLoginTargetRef.current = gmtLoginTargetFromConfig(config);
         push(`平台切换失败: ${e}`);
         await refreshGmtSession(config);
       }
@@ -2195,6 +2233,7 @@ export default function App() {
       if (Boolean(config.gmtPreliveEnabled) === enabled) return;
       gmtSessionRequestIdRef.current += 1;
       const next = setGmtPreliveEnabled(config, enabled);
+      activeGmtLoginTargetRef.current = enabled ? "prelive" : "overseas";
       setGmtLoggedIn(false);
       setGmtEnvs(enabled ? [PRELIVE_GMT_ENV] : []);
       setGmtLoginModalOpen(false);
@@ -6078,18 +6117,19 @@ export default function App() {
 
   const GmtLoginModal = () => {
     if (!gmtLoginModalOpen || !config) return null;
+    const label = gmtLoginTargetLabel(gmtLoginModalTarget);
     return (
       <div className="modal-back" onMouseDown={() => setGmtLoginModalOpen(false)}>
         <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-          <h2>GMT {config.gmtPlatform === "cn" ? "国服" : "海外"}登录</h2>
+          <h2>GMT {label}登录</h2>
           <p className="help">
             将打开内置浏览器完成 Garena SSO 登录；完成后点「完成登录」保存 Cookie。
           </p>
           <div className="btn-row">
-            <button type="button" className="btn" onClick={() => void openGmtLoginWindow()}>
+            <button type="button" className="btn" onClick={() => void openGmtLoginWindow(gmtLoginModalTarget)}>
               打开登录
             </button>
-            <button type="button" className="btn primary" onClick={() => void completeGmtLogin()}>
+            <button type="button" className="btn primary" onClick={() => void completeGmtLogin(gmtLoginModalTarget)}>
               完成登录
             </button>
             <button
@@ -6097,7 +6137,7 @@ export default function App() {
               className="btn"
               onClick={() => {
                 setGmtLoginModalOpen(false);
-                void gmtCloseLoginWindow();
+                void gmtCloseLoginWindow(gmtLoginModalTarget);
               }}
             >
               取消
@@ -6152,6 +6192,12 @@ export default function App() {
       {appUpdater.offer ? (
         <UpdateAvailableModal offer={appUpdater.offer} onDismiss={appUpdater.dismiss} />
       ) : null}
+      {appUpdater.pendingInstallFailure ? (
+        <UpdateInstallFailedModal
+          message={appUpdater.pendingInstallFailure}
+          onDismiss={appUpdater.dismissPendingInstallFailure}
+        />
+      ) : null}
       {settingsOpen && config ? (
         <SettingsModal
           config={config}
@@ -6164,6 +6210,9 @@ export default function App() {
           gtopLoggedIn={gtopLoggedIn}
           onOpenGtopLogin={() => void openGtopLoginWindow()}
           onCompleteGtopLogin={() => void completeGtopLogin()}
+          currentGmtLoginTarget={gmtLoginTargetFromConfig(config)}
+          onOpenGmtLogin={(target) => void openGmtLoginWindow(target)}
+          onCompleteGmtLogin={(target) => void completeGmtLogin(target)}
           appUpdaterConfigured={appUpdater.configured}
           appUpdaterChecking={appUpdater.checking}
           appUpdaterStatusMessage={appUpdater.statusMessage}

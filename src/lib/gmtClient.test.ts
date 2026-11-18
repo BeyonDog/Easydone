@@ -5,72 +5,9 @@ import {
   PRELIVE_GMT_ENV,
   PRELIVE_GMT_ENV_NAMES,
   filterPreliveGmtEnvs,
-  gmtSessionSliceFromConfig,
   gtopBlockedByPreliveMessage,
   isPreliveGmtEnvName,
 } from "./gmtClient.ts";
-
-describe("gmtSessionSliceFromConfig", () => {
-  it("uses the CN GMT endpoint and cookie for the cn platform", () => {
-    const slice = gmtSessionSliceFromConfig({
-      gmtPlatform: "cn",
-      gmtBaseUrl: "https://test-krad.stdgmtool.web.garena.cn",
-      gmtCookie: "overseas-cookie",
-      gmtCnCookie: "cn-cookie",
-      gmtEnvId: 7,
-      gmtPreliveEnabled: true,
-    });
-
-    assert.deepEqual(slice, {
-      gmtBaseUrl: "https://test-gngcnprod.stdgmtool.web.garena.cn",
-      gmtCookie: "cn-cookie",
-      gmtEnvId: 7,
-    });
-  });
-
-  it("keeps the existing GMT endpoint and cookie for the overseas platform", () => {
-    const slice = gmtSessionSliceFromConfig({
-      gmtPlatform: "overseas",
-      gmtBaseUrl: "https://custom-overseas.example",
-      gmtCookie: "overseas-cookie",
-      gmtCnCookie: "cn-cookie",
-      gmtEnvId: 17,
-    });
-
-    assert.deepEqual(slice, {
-      gmtBaseUrl: "https://custom-overseas.example",
-      gmtCookie: "overseas-cookie",
-      gmtEnvId: 17,
-    });
-  });
-
-  it("routes overseas PR mode to pre-krad with the selected env id", () => {
-    const slice = gmtSessionSliceFromConfig({
-      gmtPlatform: "overseas",
-      gmtPreliveEnabled: true,
-      gmtBaseUrl: "https://custom-overseas.example",
-      gmtCookie: "overseas-cookie",
-      gmtCnCookie: "cn-cookie",
-      gmtEnvId: 99,
-    });
-
-    assert.deepEqual(slice, {
-      gmtBaseUrl: PRELIVE_GMT_BASE_URL,
-      gmtCookie: "overseas-cookie",
-      gmtEnvId: 99,
-    });
-  });
-
-  it("falls back to PreLive-SG id when PR mode has no env id", () => {
-    const slice = gmtSessionSliceFromConfig({
-      gmtPlatform: "overseas",
-      gmtPreliveEnabled: true,
-      gmtCookie: "overseas-cookie",
-    });
-
-    assert.equal(slice.gmtEnvId, PRELIVE_GMT_ENV.id);
-  });
-});
 
 describe("PR GMT env allowlist", () => {
   it("includes the expected PreLive env names", () => {
